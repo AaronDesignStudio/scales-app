@@ -1,24 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Scales Mobile App
+
+A hybrid mobile web application for practicing piano and musical scales. Built with Next.js 15, React 19, and Shadcn UI.
+
+## Features
+
+### Home Screen
+- **My Scales**: List of preloaded musical scales with difficulty levels (Easy, Intermediate, Advanced)
+- **Recent Sessions**: Shows the last 3 practice sessions (empty for new users)
+- **Workout Session**: Start a random scales practice session
+
+### Current Scales
+- C Major (Easy)
+- G Major (Easy) 
+- D Major (Intermediate)
+- A Minor (Easy)
+- E Minor (Intermediate)  
+- F Major (Advanced)
+
+## Tech Stack
+
+- **Framework**: Next.js 15 with App Router
+- **Language**: JavaScript (no TypeScript)
+- **Styling**: Tailwind CSS
+- **UI Components**: Shadcn UI + Radix UI
+- **Icons**: Lucide React
 
 ## Getting Started
 
-First, run the development server:
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+2. Run the development server:
+   ```bash
+   npm run dev
+   ```
+
+3. Open [http://localhost:3000](http://localhost:3000) in your browser
+
+## Project Structure
+
+```
+src/
+├── app/
+│   ├── layout.js          # Root layout with mobile optimizations
+│   ├── page.js            # Home screen
+│   └── globals.css        # Global styles
+├── components/
+│   ├── ui/                # Shadcn UI components
+│   └── scales/            # Scale-specific components
+│       ├── ScaleCard.jsx  # Individual scale card
+│       └── SessionCard.jsx # Recent session card
+└── data/
+    └── scales.js          # Scales and sessions data
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Mobile Optimization
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+The app is optimized for mobile devices with:
+- Responsive design (max-width: 448px)
+- Touch-friendly interfaces
+- Mobile viewport meta tags
+- PWA-ready configuration
+- Apple mobile web app support
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Future Features
+
+- Add new scales functionality
+- Practice session implementation
+- User progress tracking
+- Audio feedback
+- Metronome integration
+- Statistics and analytics
+
+## Development
+
+This is a hybrid web app designed to work like a native mobile app in browsers. It uses modern web technologies to provide a smooth mobile experience without requiring app store deployment.
 
 ## Learn More
 

@@ -1,103 +1,150 @@
-import Image from "next/image";
+'use client';
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Plus } from "lucide-react";
+import ScaleCard from "@/components/scales/ScaleCard";
+import SessionCard from "@/components/scales/SessionCard";
+import ScalePracticeModal from "@/components/scales/ScalePracticeModal";
+import { INITIAL_SCALES, SAMPLE_SESSIONS, SCALE_LAST_SESSIONS, USER_PROGRESS } from "@/data/scales";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.js
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const router = useRouter();
+  
+  // For demo purposes, we show sample sessions. In a real app, this would be empty for new users
+  const [recentSessions, setRecentSessions] = useState(SAMPLE_SESSIONS);
+  const [selectedScale, setSelectedScale] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  const handleAddScale = () => {
+    // TODO: Implement add scale functionality
+    console.log("Add scale clicked");
+  };
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+  const handleScaleClick = (scale) => {
+    setSelectedScale(scale);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedScale(null);
+  };
+
+  const handleSelectOctave = (scale, practiceType, octaveOption) => {
+    // Navigate to practice page with configuration
+    const params = new URLSearchParams({
+      scale: scale.name,
+      type: practiceType.name,
+      octaves: octaveOption.octaves.toString()
+    });
+    
+    router.push(`/practice?${params.toString()}`);
+  };
+
+  const handleStartLastSession = (session) => {
+    // TODO: Start the specific last session
+    console.log("Start last session:", session);
+  };
+
+  const handleStartSession = (session) => {
+    // TODO: Implement start session functionality
+    console.log("Start session:", session);
+  };
+
+  const handleStartWorkout = () => {
+    // TODO: Implement workout session functionality
+    console.log("Start workout session");
+  };
+
+  const handleViewAllSessions = () => {
+    // TODO: Implement view all sessions functionality
+    console.log("View all sessions");
+  };
+
+  const getLastSessionsForScale = (scale) => {
+    return SCALE_LAST_SESSIONS[scale.name] || [];
+  };
+
+  return (
+    <div className="h-screen bg-gray-50 p-4 max-w-md mx-auto flex flex-col">
+      {/* Header - Fixed */}
+      <div className="flex items-center justify-between mb-6 pt-4 flex-shrink-0">
+        <h1 className="text-2xl font-bold text-gray-900">My Scales</h1>
+        <Button 
+          onClick={handleAddScale}
+          className="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6 py-2"
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Add Scale
+        </Button>
+      </div>
+
+      {/* Scales List - Scrollable */}
+      <div className="flex-1 min-h-0 mb-6">
+        <div className="h-full overflow-y-auto space-y-3 pr-2">
+          {INITIAL_SCALES.map((scale) => (
+            <ScaleCard 
+              key={scale.id} 
+              scale={scale} 
+              onClick={handleScaleClick}
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+          ))}
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </div>
+
+      {/* Recent Sessions - Fixed at bottom */}
+      {recentSessions.length > 0 && (
+        <div className="mb-6 flex-shrink-0">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900">Recent Sessions</h2>
+            <Button 
+              variant="ghost" 
+              onClick={handleViewAllSessions}
+              className="text-blue-600 hover:text-blue-700 p-0"
+            >
+              View all
+            </Button>
+          </div>
+          
+          <div className="space-y-3">
+            {recentSessions.slice(0, 3).map((session) => (
+              <SessionCard 
+                key={session.id} 
+                session={session} 
+                onStart={handleStartSession}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Workout Session - Fixed at bottom */}
+      <Card className="bg-blue-600 text-white p-6 rounded-2xl flex-shrink-0">
+        <div className="text-center">
+          <h3 className="text-xl font-bold mb-2">Workout Session</h3>
+          <p className="text-blue-100 mb-6">Practice random scales to improve your skills</p>
+          <Button 
+            onClick={handleStartWorkout}
+            className="bg-white text-blue-600 hover:bg-gray-100 rounded-full px-8 py-3 font-medium"
+          >
+            Start Workout Session
+          </Button>
+        </div>
+      </Card>
+
+      {/* Scale Practice Modal with both views */}
+      <ScalePracticeModal
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        scale={selectedScale}
+        lastSessions={selectedScale ? getLastSessionsForScale(selectedScale) : []}
+        userProgress={USER_PROGRESS}
+        onSelectOctave={handleSelectOctave}
+        onStartLastSession={handleStartLastSession}
+      />
     </div>
   );
 }
