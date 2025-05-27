@@ -3,11 +3,12 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Play, Pause, Clock } from "lucide-react";
+import { ArrowLeft, Play, Pause, Clock, Mic, MicOff } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Piano, KeyboardShortcuts, MidiNumbers } from 'react-piano';
 import 'react-piano/dist/styles.css';
 import Soundfont from 'soundfont-player';
+import * as Tone from 'tone';
 import { USER_PROGRESS } from "@/data/scales";
 
 export default function PracticePage() {
@@ -32,6 +33,17 @@ export default function PracticePage() {
   const [audioError, setAudioError] = useState(null);
   const scalePlaybackRef = useRef(null);
   const isPlayingRef = useRef(false);
+  const metronomeRef = useRef(null);
+  const [isMetronomeMode, setIsMetronomeMode] = useState(false);
+  
+  // Pitch detection state
+  const [isListening, setIsListening] = useState(false);
+  const [detectedNote, setDetectedNote] = useState(null);
+  const [detectedFrequency, setDetectedFrequency] = useState(null);
+  const [volumeLevel, setVolumeLevel] = useState(0);
+  const micRef = useRef(null);
+  const pitchDetectionRef = useRef(null);
+  const isListeningRef = useRef(false);
   
   // Timer for practice session
   const [sessionStartTime, setSessionStartTime] = useState(null);
@@ -81,6 +93,20 @@ export default function PracticePage() {
     return () => {
       if (scalePlaybackRef.current) {
         clearTimeout(scalePlaybackRef.current);
+      }
+      if (metronomeRef.current) {
+        clearTimeout(metronomeRef.current);
+      }
+      if (pitchDetectionRef.current) {
+        cancelAnimationFrame(pitchDetectionRef.current);
+      }
+      if (micRef.current) {
+        if (micRef.current.stream) {
+          micRef.current.stream.getTracks().forEach(track => track.stop());
+        }
+        if (micRef.current.source) {
+          micRef.current.source.disconnect();
+        }
       }
       if (audioContext && audioContext.state !== 'closed') {
         audioContext.close();
@@ -174,6 +200,324 @@ export default function PracticePage() {
     return midiNumbers;
   };
 
+  // Generate metronome click sound
+  const playMetronomeClick = () => {
+    if (!audioContext) return;
+
+    try {
+      // Create a more realistic metronome sound using multiple components
+      const clickDuration = 0.1;
+      const currentTime = audioContext.currentTime;
+
+      // High frequency click component (wooden tick)
+      const oscillator1 = audioContext.createOscillator();
+      const gainNode1 = audioContext.createGain();
+      
+      oscillator1.connect(gainNode1);
+      gainNode1.connect(audioContext.destination);
+      
+      oscillator1.frequency.setValueAtTime(2000, currentTime);
+      oscillator1.type = 'triangle';
+      
+      gainNode1.gain.setValueAtTime(0, currentTime);
+      gainNode1.gain.linearRampToValueAtTime(0.4, currentTime + 0.001);
+      gainNode1.gain.exponentialRampToValueAtTime(0.01, currentTime + 0.02);
+      
+      oscillator1.start(currentTime);
+      oscillator1.stop(currentTime + 0.02);
+
+      // Mid frequency component for body
+      const oscillator2 = audioContext.createOscillator();
+      const gainNode2 = audioContext.createGain();
+      
+      oscillator2.connect(gainNode2);
+      gainNode2.connect(audioContext.destination);
+      
+      oscillator2.frequency.setValueAtTime(800, currentTime);
+      oscillator2.type = 'sine';
+      
+      gainNode2.gain.setValueAtTime(0, currentTime);
+      gainNode2.gain.linearRampToValueAtTime(0.2, currentTime + 0.002);
+      gainNode2.gain.exponentialRampToValueAtTime(0.01, currentTime + 0.05);
+      
+      oscillator2.start(currentTime);
+      oscillator2.stop(currentTime + 0.05);
+
+      // Low frequency thump for realistic feel
+      const oscillator3 = audioContext.createOscillator();
+      const gainNode3 = audioContext.createGain();
+      
+      oscillator3.connect(gainNode3);
+      gainNode3.connect(audioContext.destination);
+      
+      oscillator3.frequency.setValueAtTime(200, currentTime);
+      oscillator3.type = 'sine';
+      
+      gainNode3.gain.setValueAtTime(0, currentTime);
+      gainNode3.gain.linearRampToValueAtTime(0.1, currentTime + 0.005);
+      gainNode3.gain.exponentialRampToValueAtTime(0.01, currentTime + 0.08);
+      
+      oscillator3.start(currentTime);
+      oscillator3.stop(currentTime + 0.08);
+      
+      console.log('Realistic metronome tick played');
+    } catch (error) {
+      console.error('Error playing metronome click:', error);
+    }
+  };
+
+  // Start metronome after scale
+  const startMetronome = () => {
+    if (!audioContext || !isPlayingRef.current) return;
+
+    console.log('Starting metronome mode');
+    setIsMetronomeMode(true);
+    
+    const bpm = currentBPM;
+    const beatInterval = (60 / bpm) * 1000; // Time between beats in milliseconds
+    
+    // Play the first click immediately to maintain tempo
+    playMetronomeClick();
+    
+    const playMetronomeBeat = () => {
+      if (isPlayingRef.current) {
+        playMetronomeClick();
+        metronomeRef.current = setTimeout(playMetronomeBeat, beatInterval);
+      } else {
+        console.log('Metronome stopped');
+        setIsMetronomeMode(false);
+        metronomeRef.current = null;
+      }
+    };
+
+    // Schedule the next beat after the first immediate one
+    metronomeRef.current = setTimeout(playMetronomeBeat, beatInterval);
+  };
+
+  // Convert frequency to note name
+  const frequencyToNote = (frequency) => {
+    if (!frequency || frequency < 80 || frequency > 2000) return null;
+    
+    const A4 = 440;
+    const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    
+    const noteNumber = Math.round(12 * Math.log2(frequency / A4)) + 69;
+    const octave = Math.floor(noteNumber / 12) - 1;
+    const noteIndex = noteNumber % 12;
+    
+    if (octave < 0 || octave > 8) return null;
+    
+    return `${noteNames[noteIndex]}${octave}`;
+  };
+
+  // Start pitch detection
+  const startPitchDetection = async () => {
+    try {
+      console.log('Starting pitch detection...');
+      
+      // Use native Web Audio API for more reliable microphone access
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        } 
+      });
+      
+      console.log('Microphone stream obtained:', stream);
+      
+      // Create audio context if not exists
+      if (!audioContext) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        const newAudioContext = new AudioContextClass();
+        setAudioContext(newAudioContext);
+        
+        // Use the new context for analysis
+        setupAnalysis(stream, newAudioContext);
+      } else {
+        setupAnalysis(stream, audioContext);
+      }
+      
+    } catch (error) {
+      console.error('Error starting pitch detection:', error);
+      alert('Could not access microphone. Please check permissions and try again.');
+      setIsListening(false);
+    }
+  };
+
+  const setupAnalysis = (stream, context) => {
+    try {
+      // Create audio nodes
+      const source = context.createMediaStreamSource(stream);
+      const analyser = context.createAnalyser();
+      
+      // Configure analyser
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.3;
+      
+      // Connect source to analyser
+      source.connect(analyser);
+      
+      // Store references
+      micRef.current = { stream, source, analyser };
+      
+      setIsListening(true);
+      isListeningRef.current = true;
+      console.log('Audio analysis setup complete');
+      
+      // Start analysis loop
+      analyzeAudio(analyser, context);
+      
+    } catch (error) {
+      console.error('Error setting up audio analysis:', error);
+      setIsListening(false);
+    }
+  };
+
+  const analyzeAudio = (analyser, context) => {
+    if (!isListeningRef.current) {
+      console.log('Analysis stopped - not listening');
+      return;
+    }
+    
+    // Add frame counter for debugging
+    if (!analyzeAudio.frameCount) analyzeAudio.frameCount = 0;
+    analyzeAudio.frameCount++;
+    
+    // Log every 60 frames (roughly every second at 60fps)
+    if (analyzeAudio.frameCount % 60 === 0) {
+      console.log('Analysis loop running, frame:', analyzeAudio.frameCount);
+    }
+    
+    try {
+      // Get time domain data for pitch detection
+      const bufferLength = analyser.fftSize;
+      const dataArray = new Float32Array(bufferLength);
+      analyser.getFloatTimeDomainData(dataArray);
+      
+      // Calculate volume level
+      let sum = 0;
+      let maxAmplitude = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        const amplitude = Math.abs(dataArray[i]);
+        sum += amplitude * amplitude;
+        maxAmplitude = Math.max(maxAmplitude, amplitude);
+      }
+      
+      const rms = Math.sqrt(sum / bufferLength);
+      const volumePercent = Math.round(rms * 1000); // Increased sensitivity
+      
+      // More frequent logging for debugging
+      if (volumePercent > 0) {
+        console.log('RMS volume:', rms, 'Max amplitude:', maxAmplitude, 'Volume %:', volumePercent);
+      }
+      
+      setVolumeLevel(volumePercent);
+      
+      // Lower threshold for pitch detection
+      if (rms > 0.001) {
+        const frequency = detectPitchFromBuffer(dataArray, context.sampleRate);
+        
+        if (frequency) {
+          const note = frequencyToNote(frequency);
+          console.log('Detected frequency:', frequency, 'Note:', note);
+          
+          if (note) {
+            setDetectedNote(note);
+            setDetectedFrequency(Math.round(frequency));
+          }
+        } else {
+          setDetectedNote(null);
+          setDetectedFrequency(null);
+        }
+      } else {
+        setDetectedNote(null);
+        setDetectedFrequency(null);
+      }
+      
+    } catch (error) {
+      console.error('Error in audio analysis:', error);
+    }
+    
+    // Continue analysis - ensure this keeps running
+    if (isListeningRef.current) {
+      pitchDetectionRef.current = requestAnimationFrame(() => analyzeAudio(analyser, context));
+    }
+  };
+
+  // Autocorrelation-based pitch detection
+  const detectPitchFromBuffer = (buffer, sampleRate) => {
+    const minFreq = 80;  // Lowest piano note
+    const maxFreq = 2000; // Highest piano note we care about
+    
+    const minPeriod = Math.floor(sampleRate / maxFreq);
+    const maxPeriod = Math.floor(sampleRate / minFreq);
+    
+    let maxCorrelation = 0;
+    let bestPeriod = 0;
+    
+    // Autocorrelation
+    for (let period = minPeriod; period <= maxPeriod; period++) {
+      let correlation = 0;
+      for (let i = 0; i < buffer.length - period; i++) {
+        correlation += buffer[i] * buffer[i + period];
+      }
+      
+      if (correlation > maxCorrelation) {
+        maxCorrelation = correlation;
+        bestPeriod = period;
+      }
+    }
+    
+    // Check if correlation is strong enough
+    if (maxCorrelation > 0.001 && bestPeriod > 0) {
+      return sampleRate / bestPeriod;
+    }
+    
+    return null;
+  };
+
+  // Stop pitch detection
+  const stopPitchDetection = () => {
+    console.log('Stopping pitch detection...');
+    setIsListening(false);
+    isListeningRef.current = false;
+    setDetectedNote(null);
+    setDetectedFrequency(null);
+    setVolumeLevel(0);
+    
+    if (pitchDetectionRef.current) {
+      cancelAnimationFrame(pitchDetectionRef.current);
+      pitchDetectionRef.current = null;
+    }
+    
+    if (micRef.current) {
+      // Stop the media stream tracks
+      if (micRef.current.stream) {
+        micRef.current.stream.getTracks().forEach(track => {
+          track.stop();
+          console.log('Stopped audio track:', track);
+        });
+      }
+      
+      // Disconnect audio nodes
+      if (micRef.current.source) {
+        micRef.current.source.disconnect();
+      }
+      
+      micRef.current = null;
+    }
+  };
+
+  // Toggle pitch detection
+  const togglePitchDetection = () => {
+    if (isListening) {
+      stopPitchDetection();
+    } else {
+      startPitchDetection();
+    }
+  };
+
   const playScale = async () => {
     if (!soundfontPlayer || !audioContext) {
       console.error('Audio not ready - soundfont:', !!soundfontPlayer, 'audioContext:', !!audioContext);
@@ -210,7 +554,7 @@ export default function PracticePage() {
           try {
             const notePlay = soundfontPlayer.play(midiNumber, audioContext.currentTime, {
               duration: noteDuration / 1000,
-              gain: 0.5
+              gain: 2
             });
             console.log('Note play result:', notePlay);
           } catch (error) {
@@ -229,7 +573,11 @@ export default function PracticePage() {
           console.log('Scale playback completed or stopped');
           setActiveNotes([]);
           if (noteIndex >= scaleMidi.length) {
-            console.log('Scale completed, stopping playback');
+            console.log('Scale completed, starting metronome with perfect timing');
+            // Start metronome immediately to maintain tempo
+            startMetronome();
+          } else {
+            // Manually stopped
             setIsPlaying(false);
             isPlayingRef.current = false;
           }
@@ -273,11 +621,21 @@ export default function PracticePage() {
       console.log('=== STOPPING PLAYBACK ===');
       setIsPlaying(false);
       isPlayingRef.current = false;
+      setIsMetronomeMode(false);
       setActiveNotes([]);
+      
+      // Clear scale playback timeout
       if (scalePlaybackRef.current) {
-        console.log('Clearing timeout:', scalePlaybackRef.current);
+        console.log('Clearing scale timeout:', scalePlaybackRef.current);
         clearTimeout(scalePlaybackRef.current);
         scalePlaybackRef.current = null;
+      }
+      
+      // Clear metronome timeout
+      if (metronomeRef.current) {
+        console.log('Clearing metronome timeout:', metronomeRef.current);
+        clearTimeout(metronomeRef.current);
+        metronomeRef.current = null;
       }
     }
   };
@@ -320,7 +678,7 @@ export default function PracticePage() {
   const onPlayNote = (midiNumber) => {
     if (soundfontPlayer && audioContext) {
       console.log('Manual note play:', midiNumber);
-      soundfontPlayer.play(midiNumber, audioContext.currentTime, { gain: 0.5 });
+      soundfontPlayer.play(midiNumber, audioContext.currentTime, { gain: 0.8 });
     }
   };
 
@@ -340,7 +698,7 @@ export default function PracticePage() {
     }
 
     console.log('Testing audio with middle C...');
-    soundfontPlayer.play(60, audioContext.currentTime, { duration: 1, gain: 0.5 });
+    soundfontPlayer.play(60, audioContext.currentTime, { duration: 1, gain: 0.8 });
   };
 
   // Test scale function
@@ -362,7 +720,7 @@ export default function PracticePage() {
     scaleMidi.forEach((midiNumber, index) => {
       setTimeout(() => {
         console.log(`Testing note ${index + 1}: MIDI ${midiNumber}`);
-        soundfontPlayer.play(midiNumber, audioContext.currentTime, { duration: 0.5, gain: 0.5 });
+        soundfontPlayer.play(midiNumber, audioContext.currentTime, { duration: 0.5, gain: 0.8 });
         setActiveNotes([midiNumber]);
         
         // Clear highlight after note
@@ -462,6 +820,11 @@ export default function PracticePage() {
           <div className="text-5xl font-bold text-white bg-blue-600 rounded-lg py-4 mb-4">
             {currentBPM} BPM
           </div>
+          {isMetronomeMode && (
+            <div className="text-sm font-medium text-blue-600 bg-blue-50 rounded-lg py-2 px-4 mx-4">
+              🎵 METRONOME ACTIVE
+            </div>
+          )}
         </div>
 
         {/* Control Buttons */}
@@ -523,7 +886,7 @@ export default function PracticePage() {
       </Card>
 
       {/* Daily Practice Time */}
-      <Card className="p-4 bg-cyan-100 text-center">
+      <Card className="p-4 bg-cyan-100 text-center mb-6">
         <div className="flex items-center justify-center gap-2 mb-2">
           <Clock className="w-5 h-5 text-cyan-700" />
           <span className="text-lg font-medium text-cyan-900">Today's Practice Time</span>
@@ -531,6 +894,66 @@ export default function PracticePage() {
         <div className="text-4xl font-bold text-cyan-900">
           {formatTime(dailyPracticeTime)}
         </div>
+      </Card>
+
+      {/* Pitch Detection Section */}
+      <Card className="p-6 bg-purple-50 border-purple-200">
+        <div className="text-center mb-4">
+          <h3 className="text-lg font-semibold text-purple-900 mb-2">Piano Note Detection</h3>
+          <Button
+            onClick={togglePitchDetection}
+            className={`w-full ${isListening ? 'bg-red-500 hover:bg-red-600' : 'bg-purple-600 hover:bg-purple-700'} text-white`}
+          >
+            {isListening ? (
+              <>
+                <MicOff className="w-5 h-5 mr-2" />
+                Stop Listening
+              </>
+            ) : (
+              <>
+                <Mic className="w-5 h-5 mr-2" />
+                Start Listening
+              </>
+            )}
+          </Button>
+        </div>
+
+        {isListening && (
+          <div className="text-center">
+            <div className="bg-white rounded-lg p-4 border-2 border-purple-200 mb-2">
+              {detectedNote ? (
+                <div>
+                  <div className="text-3xl font-bold text-purple-900 mb-1">
+                    {detectedNote}
+                  </div>
+                  <div className="text-sm text-purple-600">
+                    {detectedFrequency} Hz
+                  </div>
+                </div>
+              ) : (
+                <div className="text-gray-500">
+                  <div className="text-xl">🎵</div>
+                  <div className="text-sm">Play a note on your piano...</div>
+                  <div className="text-xs text-gray-400 mt-2">
+                    Check browser console for debug info
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="text-xs text-purple-600">
+              🎤 Listening for piano notes... (Check volume levels)
+            </div>
+            <div className="mt-2">
+              <div className="text-xs text-purple-600 mb-1">Volume Level: {volumeLevel}%</div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-purple-600 h-2 rounded-full transition-all duration-200"
+                  style={{ width: `${Math.min(volumeLevel, 100)}%` }}
+                ></div>
+              </div>
+            </div>
+          </div>
+        )}
       </Card>
 
       <style jsx>{`
