@@ -1,10 +1,13 @@
 'use client';
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft, Play, Pause, Clock } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Piano, KeyboardShortcuts, MidiNumbers } from 'react-piano';
+import 'react-piano/dist/styles.css';
+import Soundfont from 'soundfont-player';
 import { USER_PROGRESS } from "@/data/scales";
 
 export default function PracticePage() {
@@ -19,7 +22,16 @@ export default function PracticePage() {
   // Practice state
   const [currentBPM, setCurrentBPM] = useState(80);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [dailyPracticeTime, setDailyPracticeTime] = useState(0); // Start from 0
+  const [dailyPracticeTime, setDailyPracticeTime] = useState(0);
+  
+  // Audio and piano state
+  const [audioContext, setAudioContext] = useState(null);
+  const [soundfontPlayer, setSoundfontPlayer] = useState(null);
+  const [activeNotes, setActiveNotes] = useState([]);
+  const [audioLoading, setAudioLoading] = useState(true);
+  const [audioError, setAudioError] = useState(null);
+  const scalePlaybackRef = useRef(null);
+  const isPlayingRef = useRef(false);
   
   // Timer for practice session
   const [sessionStartTime, setSessionStartTime] = useState(null);
@@ -32,6 +44,49 @@ export default function PracticePage() {
   };
 
   const [bestBPM, setBestBPM] = useState(getBestBPMForConfiguration());
+
+  // Initialize audio context and soundfont
+  useEffect(() => {
+    const initializeAudio = async () => {
+      try {
+        console.log('Initializing audio...');
+        setAudioLoading(true);
+        setAudioError(null);
+        
+        // Create audio context
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) {
+          throw new Error('Web Audio API not supported');
+        }
+        
+        const ac = new AudioContextClass();
+        console.log('Audio context created:', ac.state);
+        setAudioContext(ac);
+        
+        // Load acoustic grand piano soundfont
+        console.log('Loading soundfont...');
+        const player = await Soundfont.instrument(ac, 'acoustic_grand_piano');
+        console.log('Soundfont loaded successfully');
+        setSoundfontPlayer(player);
+        setAudioLoading(false);
+      } catch (error) {
+        console.error('Failed to initialize audio:', error);
+        setAudioError(error.message);
+        setAudioLoading(false);
+      }
+    };
+
+    initializeAudio();
+
+    return () => {
+      if (scalePlaybackRef.current) {
+        clearTimeout(scalePlaybackRef.current);
+      }
+      if (audioContext && audioContext.state !== 'closed') {
+        audioContext.close();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     // Update daily practice time every second when practicing
@@ -82,11 +137,149 @@ export default function PracticePage() {
     router.push('/');
   };
 
-  const handlePlayPause = () => {
-    if (!isPlaying) {
-      setSessionStartTime(Date.now());
+  // Get scale MIDI numbers
+  const getScaleMidiNumbers = (scale, octaves) => {
+    // Define scales as semitone intervals from the root note
+    const scaleIntervals = {
+      'C Major': [0, 2, 4, 5, 7, 9, 11], // W-W-H-W-W-W-H
+      'G Major': [0, 2, 4, 5, 7, 9, 11], // Same pattern, different root
+      'D Major': [0, 2, 4, 5, 7, 9, 11], // Same pattern, different root
+      'A Minor': [0, 2, 3, 5, 7, 8, 10], // W-H-W-W-H-W-W (natural minor)
+      'E Minor': [0, 2, 3, 5, 7, 8, 10], // Same pattern, different root
+      'F Major': [0, 2, 4, 5, 7, 9, 11], // Same pattern, different root
+    };
+
+    // Define root notes (MIDI numbers in octave 4)
+    const rootNotes = {
+      'C Major': 60, // C4
+      'G Major': 67, // G4
+      'D Major': 62, // D4
+      'A Minor': 57, // A3 (to keep it in reasonable range)
+      'E Minor': 64, // E4
+      'F Major': 65, // F4
+    };
+
+    const intervals = scaleIntervals[scale] || scaleIntervals['C Major'];
+    const rootNote = rootNotes[scale] || rootNotes['C Major'];
+    const midiNumbers = [];
+
+    for (let octave = 0; octave < parseInt(octaves); octave++) {
+      intervals.forEach(interval => {
+        const midiNumber = rootNote + (octave * 12) + interval;
+        midiNumbers.push(midiNumber);
+      });
     }
-    setIsPlaying(!isPlaying);
+
+    console.log(`Generated MIDI numbers for ${scale} (${octaves} octaves):`, midiNumbers);
+    return midiNumbers;
+  };
+
+  const playScale = async () => {
+    if (!soundfontPlayer || !audioContext) {
+      console.error('Audio not ready - soundfont:', !!soundfontPlayer, 'audioContext:', !!audioContext);
+      return;
+    }
+
+    try {
+      // Resume audio context if suspended (required for user interaction)
+      if (audioContext.state === 'suspended') {
+        console.log('Resuming audio context...');
+        await audioContext.resume();
+      }
+
+      console.log('Starting scale playback...');
+      const scaleMidi = getScaleMidiNumbers(scale, octaves);
+      const noteDuration = (60 / currentBPM) * 1000; // Duration per note in milliseconds
+      
+      console.log(`Playing scale at ${currentBPM} BPM (${noteDuration}ms per note)`);
+      console.log('Scale MIDI numbers:', scaleMidi);
+
+      let noteIndex = 0;
+
+      const playNextNote = () => {
+        console.log(`playNextNote called - noteIndex: ${noteIndex}, isPlayingRef.current: ${isPlayingRef.current}, scaleMidi.length: ${scaleMidi.length}`);
+        
+        if (noteIndex < scaleMidi.length && isPlayingRef.current) {
+          const midiNumber = scaleMidi[noteIndex];
+          console.log(`Playing note ${noteIndex + 1}/${scaleMidi.length}: MIDI ${midiNumber}`);
+          
+          // Highlight the current note on piano
+          setActiveNotes([midiNumber]);
+          
+          // Play the note with soundfont
+          try {
+            const notePlay = soundfontPlayer.play(midiNumber, audioContext.currentTime, {
+              duration: noteDuration / 1000,
+              gain: 0.5
+            });
+            console.log('Note play result:', notePlay);
+          } catch (error) {
+            console.error('Error playing note:', error);
+          }
+
+          noteIndex++;
+          
+          // Schedule next note
+          console.log(`Scheduling next note in ${noteDuration}ms`);
+          scalePlaybackRef.current = setTimeout(() => {
+            playNextNote();
+          }, noteDuration);
+        } else {
+          // Scale finished or stopped
+          console.log('Scale playback completed or stopped');
+          setActiveNotes([]);
+          if (noteIndex >= scaleMidi.length) {
+            console.log('Scale completed, stopping playback');
+            setIsPlaying(false);
+            isPlayingRef.current = false;
+          }
+        }
+      };
+
+      // Start the sequence
+      playNextNote();
+    } catch (error) {
+      console.error('Error in playScale:', error);
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+      setActiveNotes([]);
+    }
+  };
+
+  const handlePlayPause = async () => {
+    console.log('=== PLAY/PAUSE BUTTON CLICKED ===');
+    console.log('Current state - isPlaying:', isPlaying, 'isPlayingRef.current:', isPlayingRef.current);
+    console.log('Audio ready - soundfontPlayer:', !!soundfontPlayer, 'audioContext:', !!audioContext);
+    
+    if (!soundfontPlayer || !audioContext) {
+      console.error('Audio not ready yet');
+      alert('Audio is still loading. Please wait a moment and try again.');
+      return;
+    }
+
+    if (!isPlaying) {
+      console.log('=== STARTING PLAYBACK ===');
+      setSessionStartTime(Date.now());
+      setIsPlaying(true);
+      isPlayingRef.current = true;
+      console.log('isPlaying set to true, isPlayingRef.current set to true');
+      
+      // Wait a tick for state to update before calling playScale
+      setTimeout(async () => {
+        console.log('About to call playScale, isPlaying:', isPlaying, 'isPlayingRef.current:', isPlayingRef.current);
+        await playScale();
+      }, 10);
+    } else {
+      console.log('=== STOPPING PLAYBACK ===');
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+      setActiveNotes([]);
+      if (scalePlaybackRef.current) {
+        console.log('Clearing timeout:', scalePlaybackRef.current);
+        clearTimeout(scalePlaybackRef.current);
+        scalePlaybackRef.current = null;
+      }
+    }
   };
 
   const handleBPMChange = (change) => {
@@ -114,39 +307,68 @@ export default function PracticePage() {
 
   const scaleInfo = getScaleInfo();
 
-  // Define scale patterns (simplified for demo)
-  const getScaleNotes = (scale) => {
-    const scalePatterns = {
-      'C Major': ['C', 'D', 'E', 'F', 'G', 'A', 'B'],
-      'G Major': ['G', 'A', 'B', 'C', 'D', 'E', 'F#'],
-      'D Major': ['D', 'E', 'F#', 'G', 'A', 'B', 'C#'],
-      'A Minor': ['A', 'B', 'C', 'D', 'E', 'F', 'G'],
-      'E Minor': ['E', 'F#', 'G', 'A', 'B', 'C', 'D'],
-      'F Major': ['F', 'G', 'A', 'Bb', 'C', 'D', 'E'],
-    };
-    return scalePatterns[scale] || ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+  // Piano configuration
+  const firstNote = MidiNumbers.fromNote('c3');
+  const lastNote = MidiNumbers.fromNote('c6');
+  const keyboardShortcuts = KeyboardShortcuts.create({
+    firstNote: firstNote,
+    lastNote: lastNote,
+    keyboardConfig: KeyboardShortcuts.HOME_ROW,
+  });
+
+  // Handle piano note play/stop
+  const onPlayNote = (midiNumber) => {
+    if (soundfontPlayer && audioContext) {
+      console.log('Manual note play:', midiNumber);
+      soundfontPlayer.play(midiNumber, audioContext.currentTime, { gain: 0.5 });
+    }
   };
 
-  const scaleNotes = getScaleNotes(scale);
-
-  // Piano keys
-  const whiteKeys = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
-  const blackKeys = [
-    { note: 'C#', position: 1 },
-    { note: 'D#', position: 2 },
-    { note: 'F#', position: 4 },
-    { note: 'G#', position: 5 },
-    { note: 'A#', position: 6 },
-    { note: 'Bb', position: 6 } // Same position as A#
-  ];
-
-  const isScaleNote = (note) => {
-    return scaleNotes.includes(note);
+  const onStopNote = (midiNumber) => {
+    // Soundfont player handles note stopping automatically
   };
 
-  const getFingeringNumber = (note) => {
-    const noteIndex = scaleNotes.indexOf(note);
-    return noteIndex !== -1 ? noteIndex + 1 : '';
+  // Test audio function
+  const testAudio = async () => {
+    if (!soundfontPlayer || !audioContext) {
+      alert('Audio not ready yet');
+      return;
+    }
+
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
+    }
+
+    console.log('Testing audio with middle C...');
+    soundfontPlayer.play(60, audioContext.currentTime, { duration: 1, gain: 0.5 });
+  };
+
+  // Test scale function
+  const testScale = async () => {
+    if (!soundfontPlayer || !audioContext) {
+      alert('Audio not ready yet');
+      return;
+    }
+
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
+    }
+
+    console.log('Testing scale notes...');
+    const scaleMidi = getScaleMidiNumbers(scale, octaves);
+    console.log('Generated scale MIDI numbers:', scaleMidi);
+    
+    // Play all notes with 500ms delay between them
+    scaleMidi.forEach((midiNumber, index) => {
+      setTimeout(() => {
+        console.log(`Testing note ${index + 1}: MIDI ${midiNumber}`);
+        soundfontPlayer.play(midiNumber, audioContext.currentTime, { duration: 0.5, gain: 0.5 });
+        setActiveNotes([midiNumber]);
+        
+        // Clear highlight after note
+        setTimeout(() => setActiveNotes([]), 400);
+      }, index * 500);
+    });
   };
 
   return (
@@ -162,6 +384,22 @@ export default function PracticePage() {
           <span className="text-lg">Go back</span>
         </Button>
       </div>
+
+      {/* Audio Status Debug Info */}
+      {(audioLoading || audioError) && (
+        <Card className="p-4 mb-4 bg-yellow-50 border-yellow-200">
+          {audioLoading && <p className="text-yellow-800">Loading audio... Please wait.</p>}
+          {audioError && <p className="text-red-800">Audio Error: {audioError}</p>}
+          <div className="flex gap-2 mt-2">
+            <Button onClick={testAudio} size="sm">
+              Test Audio
+            </Button>
+            <Button onClick={testScale} size="sm" variant="outline">
+              Test Scale
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* Practice Configuration */}
       <div className="grid grid-cols-3 gap-3 mb-6">
@@ -202,48 +440,18 @@ export default function PracticePage() {
         </Card>
       </div>
 
-      {/* Piano Keyboard */}
+      {/* React Piano Component */}
       <Card className="p-4 mb-6 bg-white">
-        <div className="relative h-32">
-          {/* White Keys */}
-          <div className="flex h-full">
-            {whiteKeys.map((note, index) => (
-              <div
-                key={note}
-                className={`flex-1 border border-gray-300 flex items-end justify-center pb-2 relative ${
-                  isScaleNote(note) 
-                    ? 'bg-blue-500 text-white font-bold' 
-                    : 'bg-white text-gray-700'
-                }`}
-              >
-                <span className="text-sm">{getFingeringNumber(note) || index + 1}</span>
-                {isScaleNote(note) && (
-                  <div className="absolute top-2 w-2 h-2 bg-red-500 rounded-full"></div>
-                )}
-              </div>
-            ))}
-          </div>
-          
-          {/* Black Keys */}
-          <div className="absolute top-0 flex h-20">
-            {blackKeys.map((key) => (
-              <div
-                key={key.note}
-                className={`absolute w-8 h-20 border border-gray-600 flex items-end justify-center pb-1 ${
-                  isScaleNote(key.note) ? 'bg-blue-700' : 'bg-gray-800'
-                }`}
-                style={{ 
-                  left: `${(key.position * 14.28) - 2.5}%`,
-                  width: '8%'
-                }}
-              >
-                <span className="text-xs text-white">{key.note[0]}</span>
-                {isScaleNote(key.note) && (
-                  <div className="absolute top-1 w-1.5 h-1.5 bg-red-400 rounded-full"></div>
-                )}
-              </div>
-            ))}
-          </div>
+        <div className="piano-container">
+          <Piano
+            noteRange={{ first: firstNote, last: lastNote }}
+            playNote={onPlayNote}
+            stopNote={onStopNote}
+            width={300}
+            keyboardShortcuts={keyboardShortcuts}
+            activeNotes={activeNotes}
+            className="react-piano"
+          />
         </div>
       </Card>
 
@@ -263,6 +471,7 @@ export default function PracticePage() {
             size="lg"
             onClick={() => handleBPMChange(-5)}
             className="w-16 h-16 text-xl font-bold"
+            disabled={isPlaying}
           >
             -5
           </Button>
@@ -271,12 +480,14 @@ export default function PracticePage() {
             size="lg"
             onClick={() => handleBPMChange(-1)}
             className="w-16 h-16 text-xl font-bold"
+            disabled={isPlaying}
           >
             -1
           </Button>
           <Button
             onClick={handlePlayPause}
             className="w-24 h-16 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+            disabled={audioLoading}
           >
             {isPlaying ? <Pause className="w-8 h-8" /> : <Play className="w-8 h-8 ml-1" />}
           </Button>
@@ -285,6 +496,7 @@ export default function PracticePage() {
             size="lg"
             onClick={() => handleBPMChange(1)}
             className="w-16 h-16 text-xl font-bold"
+            disabled={isPlaying}
           >
             +1
           </Button>
@@ -293,6 +505,7 @@ export default function PracticePage() {
             size="lg"
             onClick={() => handleBPMChange(5)}
             className="w-16 h-16 text-xl font-bold"
+            disabled={isPlaying}
           >
             +5
           </Button>
@@ -319,6 +532,21 @@ export default function PracticePage() {
           {formatTime(dailyPracticeTime)}
         </div>
       </Card>
+
+      <style jsx>{`
+        .piano-container {
+          overflow-x: auto;
+        }
+        .react-piano {
+          margin: 0 auto;
+        }
+        :global(.ReactPiano__Key--active) {
+          background: #3b82f6 !important;
+        }
+        :global(.ReactPiano__Key--accidental.ReactPiano__Key--active) {
+          background: #1d4ed8 !important;
+        }
+      `}</style>
     </div>
   );
 } 
