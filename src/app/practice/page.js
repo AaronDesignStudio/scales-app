@@ -83,6 +83,11 @@ function PracticePageContent() {
   const pitchDetectionRef = useRef(null);
   const isListeningRef = useRef(false);
   
+  // Hidden feature state - Piano Note Detection
+  const [tapCount, setTapCount] = useState(0);
+  const [showPitchDetection, setShowPitchDetection] = useState(false);
+  const tapTimeoutRef = useRef(null);
+  
   // Modal states for changing practice settings
   const [showScaleModal, setShowScaleModal] = useState(false);
   const [showTypeModal, setShowTypeModal] = useState(false);
@@ -244,6 +249,9 @@ function PracticePageContent() {
       if (pitchDetectionRef.current) {
         cancelAnimationFrame(pitchDetectionRef.current);
       }
+      if (tapTimeoutRef.current) {
+        clearTimeout(tapTimeoutRef.current);
+      }
       if (micRef.current) {
         if (micRef.current.stream) {
           micRef.current.stream.getTracks().forEach(track => track.stop());
@@ -268,19 +276,20 @@ function PracticePageContent() {
     }
   }, [isPlaying, sessionStartTime]);
 
-  // Load daily practice time from database on component mount
+  // Load daily practice time from localStorage as fallback
   useEffect(() => {
     const loadDailyPracticeTime = async () => {
       const now = new Date();
       const today = now.toDateString();
       
       try {
+        // Try database first
         const savedData = await DailyPracticeManager.getDailyPracticeData(today);
         
         if (savedData) {
           if (savedData.date === today) {
             // Same day - continue from saved time
-            console.log('Continuing practice time from:', savedData.total_time, 'seconds');
+            console.log('Continuing practice time from database:', savedData.total_time, 'seconds');
             setDailyPracticeTime(savedData.total_time);
           } else {
             // New day - reset to 0 and save
@@ -303,16 +312,52 @@ function PracticePageContent() {
           });
         }
       } catch (error) {
-        console.error('Error loading practice data:', error);
-        // Fallback to 0 if there's an error
-        setDailyPracticeTime(0);
+        console.error('Database error, falling back to localStorage:', error);
+        
+        // Fallback to localStorage
+        try {
+          const localStorageKey = `dailyPractice_${today}`;
+          const localData = localStorage.getItem(localStorageKey);
+          
+          if (localData) {
+            const parsedData = JSON.parse(localData);
+            console.log('Using localStorage practice time:', parsedData.time, 'seconds');
+            setDailyPracticeTime(parsedData.time);
+          } else {
+            console.log('No localStorage data, starting from 0');
+            setDailyPracticeTime(0);
+            localStorage.setItem(localStorageKey, JSON.stringify({
+              date: today,
+              time: 0,
+              lastUpdated: now.toISOString()
+            }));
+          }
+          
+          // Clean up old localStorage entries (keep only last 7 days)
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('dailyPractice_')) {
+              const keyDate = key.replace('dailyPractice_', '');
+              const keyTime = new Date(keyDate).getTime();
+              const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+              
+              if (keyTime < weekAgo) {
+                localStorage.removeItem(key);
+                console.log('Cleaned up old practice data:', key);
+              }
+            }
+          }
+        } catch (localError) {
+          console.error('localStorage fallback also failed:', localError);
+          setDailyPracticeTime(0);
+        }
       }
     };
 
     loadDailyPracticeTime();
   }, []);
 
-  // Save daily practice time to database when it changes
+  // Save daily practice time with localStorage fallback
   useEffect(() => {
     const saveDailyPracticeTime = async () => {
       if (dailyPracticeTime > 0) { // Only save if there's actual practice time
@@ -326,10 +371,20 @@ function PracticePageContent() {
         };
         
         try {
+          // Try database first
           await DailyPracticeManager.saveDailyPracticeData(practiceData);
-          console.log('Saved practice time:', dailyPracticeTime, 'seconds');
+          console.log('Saved practice time to database:', dailyPracticeTime, 'seconds');
         } catch (error) {
-          console.error('Error saving practice time:', error);
+          console.error('Database save failed, using localStorage:', error);
+          
+          // Fallback to localStorage
+          try {
+            const localStorageKey = `dailyPractice_${today}`;
+            localStorage.setItem(localStorageKey, JSON.stringify(practiceData));
+            console.log('Saved practice time to localStorage:', dailyPracticeTime, 'seconds');
+          } catch (localError) {
+            console.error('localStorage save also failed:', localError);
+          }
         }
       }
     };
@@ -337,18 +392,19 @@ function PracticePageContent() {
     saveDailyPracticeTime();
   }, [dailyPracticeTime]);
 
-  // Check for date change every minute to handle midnight rollover
+  // Check for date change with localStorage fallback
   useEffect(() => {
     const checkDateChange = async () => {
       const now = new Date();
       const today = now.toDateString();
       
       try {
+        // Try database first
         const savedData = await DailyPracticeManager.getDailyPracticeData();
         
         if (savedData && savedData.date !== today) {
           // Date has changed (midnight passed) - reset to 0
-          console.log('Midnight passed, resetting practice time to 0');
+          console.log('Midnight passed (database), resetting practice time to 0');
           setDailyPracticeTime(0);
           await DailyPracticeManager.saveDailyPracticeData({
             date: today,
@@ -357,7 +413,26 @@ function PracticePageContent() {
           });
         }
       } catch (error) {
-        console.error('Error checking date change:', error);
+        console.error('Date check failed for database, checking localStorage:', error);
+        
+        // Fallback to localStorage
+        try {
+          const localStorageKey = `dailyPractice_${today}`;
+          const localData = localStorage.getItem(localStorageKey);
+          
+          if (!localData) {
+            // No data for today means date changed - reset to 0
+            console.log('Midnight passed (localStorage), resetting practice time to 0');
+            setDailyPracticeTime(0);
+            localStorage.setItem(localStorageKey, JSON.stringify({
+              date: today,
+              time: 0,
+              lastUpdated: now.toISOString()
+            }));
+          }
+        } catch (localError) {
+          console.error('localStorage date check also failed:', localError);
+        }
       }
     };
 
@@ -883,6 +958,28 @@ function PracticePageContent() {
     }
   };
 
+  // Handle screen tap for hidden feature
+  const handleScreenTap = () => {
+    // Clear existing timeout
+    if (tapTimeoutRef.current) {
+      clearTimeout(tapTimeoutRef.current);
+    }
+    
+    const newTapCount = tapCount + 1;
+    setTapCount(newTapCount);
+    
+    if (newTapCount >= 6) {
+      setShowPitchDetection(true);
+      setTapCount(0); // Reset counter
+      console.log('🎵 Piano Note Detection feature unlocked!');
+    } else {
+      // Reset tap count after 2 seconds of inactivity
+      tapTimeoutRef.current = setTimeout(() => {
+        setTapCount(0);
+      }, 2000);
+    }
+  };
+
   // Essential utility functions that were accidentally removed
   const formatTime = (seconds) => {
     const minutes = Math.floor(seconds / 60);
@@ -1162,7 +1259,7 @@ function PracticePageContent() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 max-w-md mx-auto">
+    <div className="min-h-screen bg-background p-4 max-w-md mx-auto" onClick={handleScreenTap}>
       {/* Header with Back Button and Theme Toggle */}
       <div className="flex items-center justify-between mb-6 pt-4">
         <Button
@@ -1250,73 +1347,73 @@ function PracticePageContent() {
       />
 
       {/* BPM Control Section */}
-      <Card className="p-6 mb-6 bg-card">
-        {/* Current BPM Display */}
-        <div className="text-center mb-6">
-          <div className="text-5xl font-bold text-white bg-blue-600 rounded-lg py-4 mb-4">
+      <Card className="p-3 mb-6 bg-card">
+        {/* Current BPM Display - Most Prominent */}
+        <div className="text-center mb-1">
+          <div className="text-4xl font-bold text-white bg-blue-600 rounded-lg py-2 mb-1 mx-2">
             {currentBPM} BPM
           </div>
           {isMetronomeMode && (
-            <div className="text-sm font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg py-2 px-4 mx-4">
+            <div className="text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg py-1 px-3 mx-6">
               🎵 METRONOME ACTIVE
             </div>
           )}
         </div>
 
-        {/* Control Buttons */}
-        <div className="flex items-center justify-center gap-4 mb-6">
+        {/* Control Buttons - Closer to BPM */}
+        <div className="flex items-center justify-center gap-2 mb-4 px-2">
           <Button
             variant="outline"
-            size="lg"
+            size="sm"
             onClick={() => handleBPMChange(-5)}
-            className="w-16 h-16 text-xl font-bold"
+            className="w-12 h-10 text-sm font-bold"
           >
             -5
           </Button>
           <Button
             variant="outline"
-            size="lg"
+            size="sm"
             onClick={() => handleBPMChange(-1)}
-            className="w-16 h-16 text-xl font-bold"
+            className="w-12 h-10 text-sm font-bold"
           >
             -1
           </Button>
           <Button
             onClick={handlePlayPause}
-            className="w-24 h-16 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50"
+            className="w-16 h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 mx-1"
             disabled={audioLoading}
           >
             {audioLoading ? (
               <ButtonLoading message="" />
             ) : isPlaying ? (
-              <Pause className="w-8 h-8" />
+              <Pause className="w-5 h-5" />
             ) : (
-              <Play className="w-8 h-8 ml-1" />
+              <Play className="w-5 h-5 ml-0.5" />
             )}
           </Button>
           <Button
             variant="outline"
-            size="lg"
+            size="sm"
             onClick={() => handleBPMChange(1)}
-            className="w-16 h-16 text-xl font-bold"
+            className="w-12 h-10 text-sm font-bold"
           >
             +1
           </Button>
           <Button
             variant="outline"
-            size="lg"
+            size="sm"
             onClick={() => handleBPMChange(5)}
-            className="w-16 h-16 text-xl font-bold"
+            className="w-12 h-10 text-sm font-bold"
           >
             +5
           </Button>
         </div>
 
-        {/* Best BPM Display */}
+        {/* Best BPM Display - More distance */}
         {bestBPM && (
-          <div className="bg-yellow-100 dark:bg-yellow-900/20 rounded-lg p-3 flex items-center justify-between">
-            <span className="font-medium text-gray-900 dark:text-gray-100">Best BPM: {bestBPM}</span>
-            <Button variant="ghost" size="sm" className="text-blue-600 dark:text-blue-400">
+          <div className="bg-yellow-100 dark:bg-yellow-900/20 rounded-lg p-2 mx-2 flex items-center justify-between">
+            <span className="font-medium text-gray-900 dark:text-gray-100 text-sm">Best BPM: {bestBPM}</span>
+            <Button variant="ghost" size="sm" className="text-blue-600 dark:text-blue-400 h-6 text-xs">
               Timeline
             </Button>
           </div>
@@ -1335,66 +1432,68 @@ function PracticePageContent() {
       </Card>
 
       {/* Pitch Detection Section */}
-      <Card className="p-6 bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-700">
-        <div className="text-center mb-4">
-          <h3 className="text-lg font-semibold text-purple-900 dark:text-purple-100 mb-2">Piano Note Detection</h3>
-          <div className="space-y-2">
-            <Button
-              onClick={togglePitchDetection}
-              className={`w-full ${isListening ? 'bg-red-500 hover:bg-red-600' : 'bg-purple-600 hover:bg-purple-700'} text-white`}
-            >
-              {isListening ? (
-                <>
-                  <MicOff className="w-5 h-5 mr-2" />
-                  Stop Listening
-                </>
-              ) : (
-                <>
-                  <Mic className="w-5 h-5 mr-2" />
-                  Start Listening
-                </>
-              )}
-            </Button>
+      {showPitchDetection && (
+        <Card className="p-6 bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-700">
+          <div className="text-center mb-4">
+            <h3 className="text-lg font-semibold text-purple-900 dark:text-purple-100 mb-2">Piano Note Detection</h3>
+            <div className="space-y-2">
+              <Button
+                onClick={togglePitchDetection}
+                className={`w-full ${isListening ? 'bg-red-500 hover:bg-red-600' : 'bg-purple-600 hover:bg-purple-700'} text-white`}
+              >
+                {isListening ? (
+                  <>
+                    <MicOff className="w-5 h-5 mr-2" />
+                    Stop Listening
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-5 h-5 mr-2" />
+                    Start Listening
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
-        </div>
 
-        {isListening && (
-          <div className="text-center">
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border-2 border-purple-200 dark:border-purple-700 mb-2">
-              {detectedNote ? (
-                <div>
-                  <div className="text-3xl font-bold text-purple-900 dark:text-purple-100 mb-1">
-                    {detectedNote}
+          {isListening && (
+            <div className="text-center">
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border-2 border-purple-200 dark:border-purple-700 mb-2">
+                {detectedNote ? (
+                  <div>
+                    <div className="text-3xl font-bold text-purple-900 dark:text-purple-100 mb-1">
+                      {detectedNote}
+                    </div>
+                    <div className="text-sm text-purple-600 dark:text-purple-400">
+                      {detectedFrequency} Hz
+                    </div>
                   </div>
-                  <div className="text-sm text-purple-600 dark:text-purple-400">
-                    {detectedFrequency} Hz
+                ) : (
+                  <div className="text-gray-500 dark:text-gray-400">
+                    <div className="text-xl">🎵</div>
+                    <div className="text-sm">Play a note on your piano...</div>
+                    <div className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+                      Check browser console for debug info
+                    </div>
                   </div>
+                )}
+              </div>
+              <div className="text-xs text-purple-600 dark:text-purple-400">
+                🎤 Listening for piano notes... (Check volume levels)
+              </div>
+              <div className="mt-2">
+                <div className="text-xs text-purple-600 dark:text-purple-400 mb-1">Volume Level: {volumeLevel}%</div>
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                  <div 
+                    className="bg-purple-600 dark:bg-purple-500 h-2 rounded-full transition-all duration-200"
+                    style={{ width: `${Math.min(volumeLevel, 100)}%` }}
+                  ></div>
                 </div>
-              ) : (
-                <div className="text-gray-500 dark:text-gray-400">
-                  <div className="text-xl">🎵</div>
-                  <div className="text-sm">Play a note on your piano...</div>
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                    Check browser console for debug info
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="text-xs text-purple-600 dark:text-purple-400">
-              🎤 Listening for piano notes... (Check volume levels)
-            </div>
-            <div className="mt-2">
-              <div className="text-xs text-purple-600 dark:text-purple-400 mb-1">Volume Level: {volumeLevel}%</div>
-              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                <div 
-                  className="bg-purple-600 dark:bg-purple-500 h-2 rounded-full transition-all duration-200"
-                  style={{ width: `${Math.min(volumeLevel, 100)}%` }}
-                ></div>
               </div>
             </div>
-          </div>
-        )}
-      </Card>
+          )}
+        </Card>
+      )}
 
       {/* Scale Selection Modal */}
       <Dialog open={showScaleModal} onOpenChange={setShowScaleModal}>
