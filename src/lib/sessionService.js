@@ -238,6 +238,225 @@ class SessionManagerClass {
       return [];
     }
   }
+
+  // Save a practice session - in static mode does nothing
+  async saveSession(sessionData) {
+    try {
+      // In static environments, do nothing (no session persistence)
+      if (this.isStaticEnvironment()) {
+        console.log('Session save skipped in static environment:', sessionData);
+        return { id: Date.now(), ...sessionData };
+      }
+
+      console.log('Saving session:', sessionData);
+      
+      // In development, try to save via API
+      const response = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save', sessionData }),
+      });
+
+      if (response.ok) {
+        const savedSession = await response.json();
+        console.log('Session saved successfully:', savedSession);
+        return savedSession;
+      }
+      
+      console.warn('Failed to save session via API');
+      return { id: Date.now(), ...sessionData };
+      
+    } catch (error) {
+      console.error('Error saving session:', error.message);
+      return { id: Date.now(), ...sessionData };
+    }
+  }
+
+  // Save a unique practice session (prevents duplicates) - in static mode does nothing
+  async saveUniqueSession(sessionData) {
+    try {
+      // In static environments, do nothing (no session persistence)
+      if (this.isStaticEnvironment()) {
+        console.log('Unique session save skipped in static environment:', sessionData);
+        return { id: Date.now(), ...sessionData };
+      }
+
+      console.log('Saving unique session:', sessionData);
+      
+      // In development, try to save via API
+      const response = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'saveUnique', sessionData }),
+      });
+
+      if (response.ok) {
+        const savedSession = await response.json();
+        console.log('Unique session saved successfully:', savedSession);
+        return savedSession;
+      }
+      
+      console.warn('Failed to save unique session via API');
+      return { id: Date.now(), ...sessionData };
+      
+    } catch (error) {
+      console.error('Error saving unique session:', error.message);
+      return { id: Date.now(), ...sessionData };
+    }
+  }
+
+  // Get best BPM for a specific exercise - in static mode returns null
+  async getBestBPMForExercise(scale, practiceType, octaves) {
+    try {
+      // In static environments, return null (no BPM tracking)
+      if (this.isStaticEnvironment()) {
+        return null;
+      }
+
+      console.log(`Fetching best BPM for ${scale} - ${practiceType} - ${octaves} octaves`);
+      
+      // In development, try to fetch from API
+      const response = await fetch(`/api/sessions?action=bestBPM&scale=${encodeURIComponent(scale)}&type=${encodeURIComponent(practiceType)}&octaves=${octaves}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`Best BPM for ${scale} - ${practiceType}: ${data.bestBPM}`);
+        return data.bestBPM;
+      }
+      
+      console.warn(`Failed to fetch best BPM for ${scale} - ${practiceType}`);
+      return null;
+    } catch (error) {
+      console.error(`Error loading best BPM for ${scale} - ${practiceType}:`, error.message);
+      return null;
+    }
+  }
 }
 
-export const SessionManager = new SessionManagerClass(); 
+export const SessionManager = new SessionManagerClass();
+
+// DailyPracticeManager - Handles daily practice time tracking
+class DailyPracticeManagerClass {
+  constructor() {
+    this.isDevelopment = process.env.NODE_ENV === 'development';
+  }
+
+  // Helper to check if we're in a static environment (like GitHub Pages)
+  isStaticEnvironment() {
+    return typeof window !== 'undefined' && !this.isDevelopment;
+  }
+
+  // Get daily practice data
+  async getDailyPracticeData(date = null) {
+    try {
+      // In static environments, use localStorage only
+      if (this.isStaticEnvironment()) {
+        const today = date || new Date().toDateString();
+        const localStorageKey = `dailyPractice_${today}`;
+        const localData = localStorage.getItem(localStorageKey);
+        
+        if (localData) {
+          const parsedData = JSON.parse(localData);
+          return {
+            date: parsedData.date,
+            total_time: parsedData.time,
+            lastUpdated: parsedData.lastUpdated
+          };
+        }
+        return null;
+      }
+
+      // Try API first in development
+      const queryParam = date ? `?date=${encodeURIComponent(date)}` : '';
+      const response = await fetch(`/api/daily-practice${queryParam}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        return data;
+      }
+      
+      // Fallback to localStorage if API fails
+      console.warn('Daily practice API failed, falling back to localStorage');
+      const today = date || new Date().toDateString();
+      const localStorageKey = `dailyPractice_${today}`;
+      const localData = localStorage.getItem(localStorageKey);
+      
+      if (localData) {
+        const parsedData = JSON.parse(localData);
+        return {
+          date: parsedData.date,
+          total_time: parsedData.time,
+          lastUpdated: parsedData.lastUpdated
+        };
+      }
+      return null;
+      
+    } catch (error) {
+      console.warn('Error getting daily practice data, using localStorage:', error);
+      const today = date || new Date().toDateString();
+      const localStorageKey = `dailyPractice_${today}`;
+      const localData = localStorage.getItem(localStorageKey);
+      
+      if (localData) {
+        const parsedData = JSON.parse(localData);
+        return {
+          date: parsedData.date,
+          total_time: parsedData.time,
+          lastUpdated: parsedData.lastUpdated
+        };
+      }
+      return null;
+    }
+  }
+
+  // Save daily practice data
+  async saveDailyPracticeData(practiceData) {
+    try {
+      // In static environments, use localStorage only
+      if (this.isStaticEnvironment()) {
+        const localStorageKey = `dailyPractice_${practiceData.date}`;
+        localStorage.setItem(localStorageKey, JSON.stringify(practiceData));
+        
+        // Clean up old entries (keep only last 7 days)
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('dailyPractice_')) {
+            const keyDate = key.replace('dailyPractice_', '');
+            const keyTime = new Date(keyDate).getTime();
+            const weekAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+            
+            if (keyTime < weekAgo) {
+              localStorage.removeItem(key);
+            }
+          }
+        }
+        return true;
+      }
+
+      // Try API first in development
+      const response = await fetch('/api/daily-practice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(practiceData),
+      });
+
+      if (response.ok) {
+        return true;
+      }
+      
+      // Fallback to localStorage if API fails
+      console.warn('Daily practice API failed, falling back to localStorage');
+      const localStorageKey = `dailyPractice_${practiceData.date}`;
+      localStorage.setItem(localStorageKey, JSON.stringify(practiceData));
+      return true;
+      
+    } catch (error) {
+      console.warn('Error saving daily practice data, using localStorage:', error);
+      const localStorageKey = `dailyPractice_${practiceData.date}`;
+      localStorage.setItem(localStorageKey, JSON.stringify(practiceData));
+      return true;
+    }
+  }
+}
+
+export const DailyPracticeManager = new DailyPracticeManagerClass(); 

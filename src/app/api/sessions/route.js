@@ -32,6 +32,25 @@ export async function GET(request) {
         const lastSessions = SessionDB.getLastSessionsForScale(scale, limit ? parseInt(limit) : 2);
         return NextResponse.json(lastSessions);
       
+      case 'exercisesForScale':
+        if (!scale) {
+          return NextResponse.json({ error: 'Scale parameter required' }, { status: 400 });
+        }
+        const exercises = SessionDB.getPracticedExercisesForScale(scale);
+        return NextResponse.json(exercises);
+      
+      case 'bestBPM':
+        if (!scale) {
+          return NextResponse.json({ error: 'Scale parameter required' }, { status: 400 });
+        }
+        const practiceType = searchParams.get('type');
+        const octaves = searchParams.get('octaves');
+        if (!practiceType || !octaves) {
+          return NextResponse.json({ error: 'Practice type and octaves parameters required' }, { status: 400 });
+        }
+        const bestBPM = SessionDB.getBestBPMForExercise(scale, practiceType, parseInt(octaves));
+        return NextResponse.json({ bestBPM });
+      
       case 'stats':
         const stats = SessionDB.getPracticeStats();
         return NextResponse.json(stats);
