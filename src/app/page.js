@@ -200,27 +200,35 @@ export default function Home() {
     setShowAddScaleModal(true);
   };
 
-  const handleAddScaleToCollection = async (scale) => {
+  const handleAddScaleToCollection = async (scales) => {
     try {
-      console.log('Adding scale to collection:', scale);
+      console.log('Adding scales to collection:', scales);
       
-      const addedScale = await ScalesManager.addScale(scale);
+      // Handle both single scale and array of scales
+      const scalesToAdd = Array.isArray(scales) ? scales : [scales];
+      const addedScales = [];
       
-      if (addedScale) {
-        // Update local state
-        const updatedScales = [...userScales, addedScale];
-        setUserScales(updatedScales);
-        console.log('Scale added successfully:', addedScale);
+      for (const scale of scalesToAdd) {
+        const addedScale = await ScalesManager.addScale(scale);
+        if (addedScale) {
+          addedScales.push(addedScale);
+        }
+      }
+      
+      if (addedScales.length > 0) {
+        // Update local state using functional form to avoid race conditions
+        setUserScales(prevScales => [...prevScales, ...addedScales]);
+        console.log(`${addedScales.length} scale(s) added successfully:`, addedScales);
       }
     } catch (error) {
-      console.error('Error adding scale:', error);
+      console.error('Error adding scales:', error);
       
       // More informative error message for production/static environments
       const isStatic = typeof window !== 'undefined' && process.env.NODE_ENV !== 'development';
       if (isStatic) {
-        alert('Scale saved to your browser! Note: In the hosted version, your scales are stored locally and won\'t sync across devices.');
+        alert('Scales saved to your browser! Note: In the hosted version, your scales are stored locally and won\'t sync across devices.');
       } else {
-        alert(`Failed to add scale: ${error.message}`);
+        alert(`Failed to add scales: ${error.message}`);
       }
     }
   };

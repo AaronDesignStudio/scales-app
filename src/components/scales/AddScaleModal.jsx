@@ -30,9 +30,8 @@ const AddScaleModal = ({ isOpen, onClose, userScales, onAddScale }) => {
   };
 
   const handleAddSelected = () => {
-    selectedScales.forEach(scale => {
-      onAddScale(scale);
-    });
+    // Pass all selected scales at once to prevent race conditions
+    onAddScale(selectedScales);
     setSelectedScales([]);
     onClose();
   };
