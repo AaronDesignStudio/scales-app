@@ -1,3 +1,5 @@
+'use client';
+
 import { Card } from "./card";
 import LoadingSpinner from "./loading-spinner";
 import PianoLoading from "./piano-loading";
@@ -35,12 +37,12 @@ const LoadingState = ({
             size={pianoSizeMap[size] || "default"}
             message=""
             showMessage={false}
-            speed={1}
+            speed={1.2}
           />
         ) : (
           <LoadingSpinner 
             size={size === "sm" ? "default" : size === "lg" ? "lg" : size === "xl" ? "xl" : "default"}
-            variant={variant === "muted" ? "muted" : "primary"}
+            variant={variant}
             usePianoAnimation={false}
           />
         )
@@ -48,11 +50,10 @@ const LoadingState = ({
       
       {message && (
         <div className={cn(
-          "text-center font-medium",
+          "text-center font-medium text-muted-foreground",
           size === "sm" && "text-sm",
           size === "lg" && "text-lg",
-          size === "xl" && "text-xl",
-          variant === "muted" ? "text-gray-500" : "text-gray-700"
+          size === "xl" && "text-xl"
         )}>
           {message}
         </div>
@@ -85,7 +86,7 @@ const LoadingState = ({
 
 // Specialized loading components for common use cases
 export const PageLoading = ({ message = "Loading page..." }) => (
-  <div className="min-h-screen flex items-center justify-center bg-gray-50">
+  <div className="min-h-screen flex items-center justify-center bg-background">
     <LoadingState 
       message={message}
       size="lg"

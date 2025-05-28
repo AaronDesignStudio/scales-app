@@ -9,11 +9,13 @@ import ScaleCard from "@/components/scales/ScaleCard";
 import SessionCard from "@/components/scales/SessionCard";
 import ScalePracticeModal from "@/components/scales/ScalePracticeModal";
 import AllSessionsModal from "@/components/scales/AllSessionsModal";
+import AddScaleModal from "@/components/scales/AddScaleModal";
 import LoadingOverlay from "@/components/ui/loading-overlay";
 import { SectionLoading, InlineLoading } from "@/components/ui/loading-state";
 import { useNavigationLoading } from "@/hooks/useNavigationLoading";
-import { INITIAL_SCALES } from "@/data/scales";
 import { SessionManager } from "@/lib/sessionService";
+import { ScalesManager } from "@/lib/scalesService";
+import ThemeToggle from "@/components/ui/theme-toggle";
 
 export default function Home() {
   const router = useRouter();
@@ -26,14 +28,19 @@ export default function Home() {
   
   // Use real sessions from SQLite database instead of localStorage
   const [recentSessions, setRecentSessions] = useState([]);
+  const [userScales, setUserScales] = useState([]);
   const [selectedScale, setSelectedScale] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isScalesLoading, setIsScalesLoading] = useState(true);
 
   // State for All Sessions Modal
   const [showAllSessionsModal, setShowAllSessionsModal] = useState(false);
   const [allSessions, setAllSessions] = useState([]);
   const [isLoadingAllSessions, setIsLoadingAllSessions] = useState(false);
+
+  // State for Add Scale Modal
+  const [showAddScaleModal, setShowAddScaleModal] = useState(false);
 
   // Add refs to track component state
   const fetchingRef = useRef(false);
@@ -49,6 +56,40 @@ export default function Home() {
         console.log('Migration completed successfully');
       } catch (error) {
         console.error('Error during migration:', error);
+      }
+    };
+
+    const initializeDatabase = async () => {
+      try {
+        // Initialize database
+        await fetch('/api/init');
+        
+        // Initialize default scales if needed
+        await ScalesManager.initializeDefaultScales();
+        
+        console.log('Database initialization completed');
+      } catch (error) {
+        console.error('Error initializing database:', error);
+      }
+    };
+
+    const loadUserScales = async () => {
+      if (!isMountedRef.current) return;
+      
+      try {
+        console.log('Loading user scales...');
+        const scales = await ScalesManager.getUserScales();
+        
+        if (isMountedRef.current) {
+          setUserScales(scales);
+        }
+      } catch (error) {
+        console.error('Error loading user scales:', error);
+        if (isMountedRef.current) {
+          setUserScales([]);
+        }
+      } finally {
+        setIsScalesLoading(false);
       }
     };
 
@@ -69,9 +110,6 @@ export default function Home() {
       
       try {
         console.log('Loading sessions...');
-        
-        // Initialize database first
-        await fetch('/api/init');
         
         // First, try to migrate any localStorage data
         await migrateLocalStorageData();
@@ -102,42 +140,18 @@ export default function Home() {
       }
     };
 
-    // Create a reusable refresh function
-    const refreshSessions = async () => {
-      // Check if component is still mounted and document is visible
-      if (!isMountedRef.current || document.hidden) {
-        console.log('Component unmounted or document hidden, skipping refresh...');
-        return;
-      }
-      
-      // Only refresh if not currently fetching
-      if (fetchingRef.current) {
-        console.log('Fetch already in progress, skipping refresh...');
-        return;
-      }
-      
-      fetchingRef.current = true;
-      
-      try {
-        console.log('Refreshing sessions...');
-        const realSessions = await SessionManager.getRecentSessions();
-        
-        // Only update state if component is still mounted
-        if (isMountedRef.current) {
-          setRecentSessions(realSessions);
-        }
-      } catch (error) {
-        console.error('Error refreshing sessions:', error);
-      } finally {
-        fetchingRef.current = false;
-      }
+    // Initialize everything
+    const initialize = async () => {
+      await initializeDatabase();
+      await loadUserScales();
+      await loadSessions();
     };
 
-    loadSessions();
+    initialize();
 
     // Set up an interval to refresh sessions every 30 seconds
     // This ensures the home screen updates when returning from practice
-    refreshIntervalRef.current = setInterval(refreshSessions, 30000);
+    refreshIntervalRef.current = setInterval(loadSessions, 30000);
 
     return () => {
       isMountedRef.current = false;
@@ -183,8 +197,21 @@ export default function Home() {
   }, []);
 
   const handleAddScale = () => {
-    // TODO: Implement add scale functionality
-    console.log("Add scale clicked");
+    setShowAddScaleModal(true);
+  };
+
+  const handleAddScaleToCollection = async (scale) => {
+    try {
+      const addedScale = await ScalesManager.addScale(scale);
+      if (addedScale) {
+        // Refresh user scales
+        const updatedScales = await ScalesManager.getUserScales();
+        setUserScales(updatedScales);
+        console.log('Scale added successfully:', addedScale);
+      }
+    } catch (error) {
+      console.error('Error adding scale:', error);
+    }
   };
 
   const handleScaleClick = async (scale) => {
@@ -260,37 +287,44 @@ export default function Home() {
   };
 
   return (
-    <div className="h-screen bg-gray-50 p-4 max-w-md mx-auto flex flex-col">
+    <div className="h-screen bg-background p-4 max-w-md mx-auto flex flex-col">
       {/* Header - Fixed */}
       <div className="flex items-center justify-between mb-6 pt-4 flex-shrink-0">
-        <h1 className="text-2xl font-bold text-gray-900">My Scales</h1>
-        <Button 
-          onClick={handleAddScale}
-          className="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6 py-2"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Scale
-        </Button>
+        <h1 className="text-2xl font-bold text-foreground">My Scales</h1>
+        <div className="flex items-center gap-3">
+          <ThemeToggle size="sm" />
+          <Button 
+            onClick={handleAddScale}
+            className="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6 py-2"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Scale
+          </Button>
+        </div>
       </div>
 
       {/* Scales List - Scrollable */}
       <div className="flex-1 min-h-0 mb-6">
-        <div className="h-full overflow-y-auto space-y-3 pr-2">
-          {INITIAL_SCALES.map((scale) => (
-            <ScaleCard 
-              key={scale.id} 
-              scale={scale} 
-              onClick={handleScaleClick}
-            />
-          ))}
-        </div>
+        {isScalesLoading ? (
+          <SectionLoading message="Loading your scales..." />
+        ) : (
+          <div className="h-full overflow-y-auto space-y-3 pr-2 scrollbar-hide">
+            {userScales.map((scale) => (
+              <ScaleCard 
+                key={scale.id} 
+                scale={scale} 
+                onClick={handleScaleClick}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Recent Sessions - Fixed at bottom */}
       {!isLoading && recentSessions.filter(session => session.duration > 0).length > 0 && (
         <div className="mb-6 flex-shrink-0">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-gray-900">Recent Sessions</h2>
+            <h2 className="text-xl font-bold text-foreground">Recent Sessions</h2>
             <Button 
               variant="ghost" 
               onClick={handleViewAllSessions}
@@ -364,12 +398,34 @@ export default function Home() {
         isLoading={isLoadingAllSessions}
       />
 
+      {/* Add Scale Modal */}
+      <AddScaleModal
+        isOpen={showAddScaleModal}
+        onClose={() => setShowAddScaleModal(false)}
+        userScales={userScales}
+        onAddScale={handleAddScaleToCollection}
+      />
+
       {/* Navigation Loading Overlay */}
       <LoadingOverlay 
         isVisible={isNavigating} 
         message={loadingMessage}
         variant="primary"
       />
+
+      {/* Custom CSS to hide scrollbar */}
+      <style jsx>{`
+        .scrollbar-hide {
+          /* Hide scrollbar for Chrome, Safari and Opera */
+          -webkit-scrollbar {
+            display: none;
+          }
+          
+          /* Hide scrollbar for IE, Edge and Firefox */
+          -ms-overflow-style: none;  /* IE and Edge */
+          scrollbar-width: none;  /* Firefox */
+        }
+      `}</style>
     </div>
   );
 }

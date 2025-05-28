@@ -46,22 +46,22 @@ export default function AllSessionsModal({ isOpen, onClose, sessions, onStartSes
           {isLoading ? (
             <InlineLoading message="Loading sessions..." />
           ) : sessions.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-muted-foreground">
               <div className="text-lg font-medium mb-2">No practice sessions yet</div>
               <div className="text-sm">Start practicing to see your sessions here!</div>
             </div>
           ) : (
             sessions.map((session) => (
-              <Card key={session.id} className="p-4 bg-white border border-gray-200 rounded-lg">
+              <Card key={session.id} className="p-4 bg-card border border-border rounded-lg hover:bg-accent transition-colors">
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
-                      <p className="text-blue-600 font-medium">
+                      <p className="text-blue-600 dark:text-blue-400 font-medium">
                         {session.scale}
                       </p>
                     </div>
                     
-                    <div className="text-sm text-gray-600 space-y-1">
+                    <div className="text-sm text-muted-foreground space-y-1">
                       <div>
                         {session.practiceType || session.hand || session.pattern}, {session.octaves} Octave{session.octaves > 1 ? 's' : ''}, {session.bpm} BPM
                       </div>
@@ -75,7 +75,7 @@ export default function AllSessionsModal({ isOpen, onClose, sessions, onStartSes
                         )}
                         
                         {session.timestamp && (
-                          <span className="text-xs text-gray-500">
+                          <span className="text-xs text-muted-foreground/60">
                             {formatTimestamp(session.timestamp)}
                           </span>
                         )}
@@ -85,7 +85,7 @@ export default function AllSessionsModal({ isOpen, onClose, sessions, onStartSes
                   
                   <Button 
                     onClick={() => onStartSession && onStartSession(session)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-4 py-2 ml-4"
+                    className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 text-white rounded-full px-4 py-2 ml-4"
                   >
                     Start
                   </Button>
@@ -95,7 +95,7 @@ export default function AllSessionsModal({ isOpen, onClose, sessions, onStartSes
           )}
         </div>
         
-        <div className="mt-4 pt-4 border-t">
+        <div className="mt-4 pt-4 border-t border-border">
           <Button 
             onClick={onClose}
             variant="outline"

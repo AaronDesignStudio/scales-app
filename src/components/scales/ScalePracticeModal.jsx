@@ -137,7 +137,7 @@ export default function ScalePracticeModal({
     if (currentView === 'octaves' && selectedPracticeType) {
       return (
         <>
-          {scale.name} / <span className="text-gray-500">{selectedPracticeType.name}</span>
+          {scale.name} / <span className="text-muted-foreground">{selectedPracticeType.name}</span>
         </>
       );
     }
@@ -153,12 +153,12 @@ export default function ScalePracticeModal({
               variant="ghost"
               size="sm"
               onClick={handleBackToPractice}
-              className="absolute left-4 top-6 p-2 hover:bg-gray-100 rounded-full"
+              className="absolute left-4 top-6 p-2 hover:bg-accent rounded-full"
             >
               <ArrowLeft className="w-4 h-4" />
             </Button>
           )}
-          <DialogTitle className="text-2xl font-bold text-center text-gray-900">
+          <DialogTitle className="text-2xl font-bold text-center text-foreground">
             {getModalTitle()}
           </DialogTitle>
         </DialogHeader>
@@ -169,9 +169,9 @@ export default function ScalePracticeModal({
               {/* Practice Types Section */}
               <div className="mb-6">
                 <div className="flex items-center justify-center mb-4">
-                  <div className="flex-1 h-px bg-gray-300"></div>
-                  <span className="px-4 text-sm text-gray-500">Select practice type</span>
-                  <div className="flex-1 h-px bg-gray-300"></div>
+                  <div className="flex-1 h-px bg-border"></div>
+                  <span className="px-4 text-sm text-muted-foreground">Select practice type</span>
+                  <div className="flex-1 h-px bg-border"></div>
                 </div>
                 
                 {isLoadingScaleData ? (
@@ -185,17 +185,17 @@ export default function ScalePracticeModal({
                         <button
                           key={practiceType.id}
                           onClick={() => handlePracticeTypeClick(practiceType)}
-                          className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors"
+                          className="w-full flex items-center justify-between p-4 bg-muted hover:bg-accent rounded-xl border border-border transition-colors"
                         >
                           <div className="flex items-center gap-3">
-                            <span className="text-lg font-medium text-gray-900">
+                            <span className="text-lg font-medium text-foreground">
                               {practiceType.name}
                             </span>
                             {hasBeenPracticed && (
-                              <Eye className="w-4 h-4 text-blue-600" />
+                              <Eye className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                             )}
                           </div>
-                          <ChevronRight className="w-5 h-5 text-gray-400" />
+                          <ChevronRight className="w-5 h-5 text-muted-foreground" />
                         </button>
                       );
                     })}
@@ -207,16 +207,16 @@ export default function ScalePracticeModal({
               {!isLoadingScaleData && lastSessions.length > 0 && (
                 <div className="mb-6">
                   <div className="flex items-center justify-center mb-4">
-                    <div className="flex-1 h-px bg-gray-300"></div>
-                    <span className="px-4 text-sm text-gray-500">Last Sessions</span>
-                    <div className="flex-1 h-px bg-gray-300"></div>
+                    <div className="flex-1 h-px bg-border"></div>
+                    <span className="px-4 text-sm text-muted-foreground">Last Sessions</span>
+                    <div className="flex-1 h-px bg-border"></div>
                   </div>
                   
                   <div className="space-y-3">
                     {lastSessions.slice(0, 2).map((session) => (
-                      <div key={session.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
+                      <div key={session.id} className="flex items-center justify-between p-3 bg-card rounded-lg border border-border">
                         <div>
-                          <p className="text-blue-600 font-medium text-sm">
+                          <p className="text-blue-600 dark:text-blue-400 font-medium text-sm">
                             {session.practice_type && `${session.practice_type}, `}
                             {session.practiceType && `${session.practiceType}, `}
                             {session.hand && `${session.hand}, `}
@@ -240,9 +240,9 @@ export default function ScalePracticeModal({
             /* Octaves Selection Section */
             <div className="mb-6">
               <div className="flex items-center justify-center mb-6">
-                <div className="flex-1 h-px bg-gray-300"></div>
-                <span className="px-4 text-sm text-gray-500">Select Octaves</span>
-                <div className="flex-1 h-px bg-gray-300"></div>
+                <div className="flex-1 h-px bg-border"></div>
+                <span className="px-4 text-sm text-muted-foreground">Select Octaves</span>
+                <div className="flex-1 h-px bg-border"></div>
               </div>
               
               {isLoadingBPMs ? (
@@ -255,13 +255,13 @@ export default function ScalePracticeModal({
                       <button
                         key={octaveOption.octaves}
                         onClick={() => handleOctaveClick(octaveOption)}
-                        className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors"
+                        className="w-full flex items-center justify-between p-4 bg-muted hover:bg-accent rounded-xl border border-border transition-colors"
                       >
-                        <span className="text-lg font-medium text-gray-900">
+                        <span className="text-lg font-medium text-foreground">
                           {octaveOption.label}
                         </span>
                         {bestBPM && (
-                          <span className="text-sm text-gray-600 font-medium">
+                          <span className="text-sm text-muted-foreground font-medium">
                             Best: {bestBPM} BPM
                           </span>
                         )}

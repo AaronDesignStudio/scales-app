@@ -43,11 +43,11 @@ const PianoLoading = ({
     return (
       <div className={cn("flex flex-col items-center justify-center gap-3", className)} {...props}>
         <div className={cn(
-          "rounded-full border-2 border-gray-300 border-t-blue-600 animate-spin",
+          "rounded-full border-2 border-gray-300 dark:border-gray-600 border-t-blue-600 animate-spin",
           sizeClasses[size]
         )} />
         {showMessage && message && (
-          <div className={cn("text-gray-700 text-center", messageSizes[size])}>
+          <div className={cn("text-gray-700 dark:text-gray-300 text-center", messageSizes[size])}>
             {message}
           </div>
         )}
@@ -71,7 +71,7 @@ const PianoLoading = ({
       </div>
       
       {showMessage && message && (
-        <div className={cn("text-gray-700 text-center font-medium", messageSizes[size])}>
+        <div className={cn("text-gray-700 dark:text-gray-300 text-center font-medium", messageSizes[size])}>
           {message}
         </div>
       )}

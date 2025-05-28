@@ -53,7 +53,7 @@ const LoadingOverlay = ({
 
   const overlayClasses = cn(
     "fixed inset-0 z-50 flex items-center justify-center",
-    "bg-white/90 backdrop-blur-sm",
+    "bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm",
     "transition-all duration-300 ease-in-out",
     animationState === 'visible' && "opacity-100",
     animationState === 'hiding' && "opacity-0",
@@ -63,7 +63,7 @@ const LoadingOverlay = ({
 
   const contentClasses = cn(
     "flex flex-col items-center justify-center gap-4 p-8",
-    "bg-white rounded-2xl shadow-lg border border-gray-200",
+    "bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700",
     "transform transition-all duration-300 ease-in-out",
     animationState === 'visible' && "scale-100 opacity-100",
     animationState === 'hiding' && "scale-95 opacity-0",
@@ -90,7 +90,7 @@ const LoadingOverlay = ({
               />
             )}
             {message && (
-              <div className="text-lg font-medium text-gray-700 text-center">
+              <div className="text-lg font-medium text-gray-700 dark:text-gray-300 text-center">
                 {message}
               </div>
             )}

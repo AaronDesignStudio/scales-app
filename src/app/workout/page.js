@@ -9,6 +9,7 @@ import { PageLoading, SectionLoading } from "@/components/ui/loading-state";
 import LoadingOverlay from "@/components/ui/loading-overlay";
 import { useNavigationLoading } from "@/hooks/useNavigationLoading";
 import { INITIAL_SCALES } from "@/data/scales";
+import ThemeToggle from "@/components/ui/theme-toggle";
 
 const PRACTICE_TYPES = [
   'Right Hand',
@@ -119,36 +120,39 @@ export default function WorkoutPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 max-w-md mx-auto">
+    <div className="min-h-screen bg-background p-4 max-w-md mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-6 pt-4">
         <Button 
           variant="ghost" 
           onClick={() => navigateBack("Going back...")}
-          className="p-2 hover:bg-gray-100 rounded-full"
+          className="p-2 hover:bg-muted rounded-full"
         >
           <ArrowLeft className="w-6 h-6" />
         </Button>
-        <h1 className="text-2xl font-bold text-gray-900">Workout Session</h1>
-        <Button 
-          variant="ghost" 
-          onClick={handleGenerateNew}
-          className="p-2 hover:bg-gray-100 rounded-full"
-        >
-          <Shuffle className="w-6 h-6" />
-        </Button>
+        <h1 className="text-2xl font-bold text-foreground">Workout Session</h1>
+        <div className="flex items-center gap-2">
+          <ThemeToggle size="sm" />
+          <Button 
+            variant="ghost" 
+            onClick={handleGenerateNew}
+            className="p-2 hover:bg-muted rounded-full"
+          >
+            <Shuffle className="w-6 h-6" />
+          </Button>
+        </div>
       </div>
 
       {/* Progress */}
-      <Card className="p-4 mb-6 bg-blue-50 border-blue-200">
+      <Card className="p-4 mb-6 bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
         <div className="text-center">
-          <div className="text-sm text-blue-600 mb-2">Progress</div>
-          <div className="text-2xl font-bold text-blue-900">
+          <div className="text-sm text-blue-600 dark:text-blue-400 mb-2">Progress</div>
+          <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">
             {completedExercises.length} / {exerciseQueue.length}
           </div>
-          <div className="w-full bg-blue-200 rounded-full h-2 mt-3">
+          <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2 mt-3">
             <div 
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              className="bg-blue-600 dark:bg-blue-500 h-2 rounded-full transition-all duration-300"
               style={{ width: `${(completedExercises.length / exerciseQueue.length) * 100}%` }}
             />
           </div>
@@ -157,11 +161,11 @@ export default function WorkoutPage() {
 
       {/* Current Exercise */}
       {currentExercise ? (
-        <Card className="p-6 mb-6 bg-white">
+        <Card className="p-6 mb-6 bg-card">
           <div className="text-center">
-            <div className="text-sm text-gray-500 mb-2">Current Exercise</div>
-            <div className="text-2xl font-bold text-gray-900 mb-2">{currentExercise.scale}</div>
-            <div className="text-lg text-gray-700 mb-4">
+            <div className="text-sm text-muted-foreground mb-2">Current Exercise</div>
+            <div className="text-2xl font-bold text-foreground mb-2">{currentExercise.scale}</div>
+            <div className="text-lg text-muted-foreground mb-4">
               {currentExercise.practiceType} • {currentExercise.octaves} Octave{currentExercise.octaves > 1 ? 's' : ''} • {currentExercise.bpm} BPM
             </div>
             
@@ -185,10 +189,10 @@ export default function WorkoutPage() {
           </div>
         </Card>
       ) : (
-        <Card className="p-6 mb-6 bg-green-50 border-green-200">
+        <Card className="p-6 mb-6 bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800">
           <div className="text-center">
-            <div className="text-2xl font-bold text-green-900 mb-2">Workout Complete! 🎉</div>
-            <div className="text-green-700 mb-4">
+            <div className="text-2xl font-bold text-green-900 dark:text-green-100 mb-2">Workout Complete! 🎉</div>
+            <div className="text-green-700 dark:text-green-300 mb-4">
               You&apos;ve completed all {completedExercises.length} exercises in this workout session.
             </div>
             <Button 
@@ -204,25 +208,25 @@ export default function WorkoutPage() {
 
       {/* Exercise Queue */}
       <Card className="p-4">
-        <div className="text-lg font-semibold text-gray-900 mb-4">Upcoming Exercises</div>
+        <div className="text-lg font-semibold text-foreground mb-4">Upcoming Exercises</div>
         <div className="space-y-2">
           {exerciseQueue.slice(completedExercises.length + 1).map((exercise, index) => (
             <div 
               key={exercise.id}
-              className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+              className="flex items-center justify-between p-3 bg-muted rounded-lg"
             >
               <div>
-                <div className="font-medium text-gray-900">{exercise.scale}</div>
-                <div className="text-sm text-gray-600">
+                <div className="font-medium text-foreground">{exercise.scale}</div>
+                <div className="text-sm text-muted-foreground">
                   {exercise.practiceType} • {exercise.octaves} Oct • {exercise.bpm} BPM
                 </div>
               </div>
-              <div className="text-sm text-gray-500">#{index + 2}</div>
+              <div className="text-sm text-muted-foreground">#{index + 2}</div>
             </div>
           ))}
           
           {exerciseQueue.length === 0 && (
-            <div className="text-center py-4 text-gray-500">
+            <div className="text-center py-4 text-muted-foreground">
               <div className="text-sm">No exercises in queue</div>
             </div>
           )}

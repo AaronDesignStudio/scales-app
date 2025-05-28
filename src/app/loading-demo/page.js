@@ -22,10 +22,10 @@ export default function LoadingDemo() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 max-w-4xl mx-auto">
+    <div className="min-h-screen bg-background p-4 max-w-4xl mx-auto">
       <div className="mb-8 pt-4">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Piano Loading Animations</h1>
-        <p className="text-gray-600">Beautiful piano-themed loading animations across the app</p>
+        <h1 className="text-3xl font-bold text-foreground mb-2">Piano Loading Animations</h1>
+        <p className="text-muted-foreground">Beautiful piano-themed loading animations across the app</p>
       </div>
 
       <div className="mb-8">

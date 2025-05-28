@@ -59,6 +59,18 @@ function createTables() {
     )
   `);
 
+  // User scales collection table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_scales (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      level TEXT NOT NULL,
+      sharps INTEGER NOT NULL DEFAULT 0,
+      flats INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // Create indexes for better performance
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_sessions_scale_type_octaves 
@@ -73,6 +85,11 @@ function createTables() {
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_sessions_timestamp 
     ON practice_sessions(timestamp DESC)
+  `);
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_user_scales_name 
+    ON user_scales(name)
   `);
 
   console.log('Database tables created successfully');
@@ -404,6 +421,149 @@ export const DailyPracticeDB = {
       console.log('Daily practice data cleared');
     } catch (error) {
       console.error('Error clearing daily practice data:', error);
+    }
+  }
+};
+
+// User Scales Operations
+export const ScalesDB = {
+  // Get user's scale collection
+  getUserScales: () => {
+    try {
+      const db = getDatabase();
+      const stmt = db.prepare(`
+        SELECT * FROM user_scales 
+        ORDER BY created_at ASC
+      `);
+      return stmt.all();
+    } catch (error) {
+      console.error('Error getting user scales:', error);
+      return [];
+    }
+  },
+
+  // Add a scale to user's collection
+  addScale: (scale) => {
+    try {
+      const db = getDatabase();
+      const stmt = db.prepare(`
+        INSERT OR IGNORE INTO user_scales (name, level, sharps, flats)
+        VALUES (?, ?, ?, ?)
+      `);
+      
+      const result = stmt.run(
+        scale.name,
+        scale.level,
+        scale.sharps || 0,
+        scale.flats || 0
+      );
+      
+      if (result.changes > 0) {
+        return { id: result.lastInsertRowid, ...scale };
+      } else {
+        // Scale already exists
+        return null;
+      }
+    } catch (error) {
+      console.error('Error adding scale:', error);
+      return null;
+    }
+  },
+
+  // Remove a scale from user's collection
+  removeScale: (scaleId) => {
+    try {
+      const db = getDatabase();
+      const stmt = db.prepare(`
+        DELETE FROM user_scales WHERE id = ?
+      `);
+      
+      const result = stmt.run(scaleId);
+      return result.changes > 0;
+    } catch (error) {
+      console.error('Error removing scale:', error);
+      return false;
+    }
+  },
+
+  // Initialize with default scales
+  initializeDefaultScales: () => {
+    try {
+      const db = getDatabase();
+      
+      // Always ensure minimum required scales exist
+      const requiredScales = [
+        { name: "C Major", level: "Easy", sharps: 0, flats: 0 },
+        { name: "G Major", level: "Easy", sharps: 1, flats: 0 },
+        { name: "Bb Major", level: "Intermediate", sharps: 0, flats: 2 },
+      ];
+      
+      const insertStmt = db.prepare(`
+        INSERT OR IGNORE INTO user_scales (name, level, sharps, flats)
+        VALUES (?, ?, ?, ?)
+      `);
+      
+      const transaction = db.transaction(() => {
+        requiredScales.forEach(scale => {
+          insertStmt.run(scale.name, scale.level, scale.sharps, scale.flats);
+        });
+      });
+      
+      transaction();
+      console.log('Minimum required scales ensured');
+      return ScalesDB.getUserScales();
+    } catch (error) {
+      console.error('Error initializing default scales:', error);
+      return [];
+    }
+  },
+
+  // Reset collection to defaults
+  resetToDefaults: () => {
+    try {
+      const db = getDatabase();
+      
+      const transaction = db.transaction(() => {
+        // Clear existing scales
+        const clearStmt = db.prepare('DELETE FROM user_scales');
+        clearStmt.run();
+        
+        // Reinitialize with defaults
+        return ScalesDB.initializeDefaultScales();
+      });
+      
+      return transaction();
+    } catch (error) {
+      console.error('Error resetting scales to defaults:', error);
+      return [];
+    }
+  },
+
+  // Check if scale exists in collection
+  scaleExists: (scaleName) => {
+    try {
+      const db = getDatabase();
+      const stmt = db.prepare(`
+        SELECT COUNT(*) as count FROM user_scales WHERE name = ?
+      `);
+      
+      const result = stmt.get(scaleName);
+      return result.count > 0;
+    } catch (error) {
+      console.error('Error checking if scale exists:', error);
+      return false;
+    }
+  },
+
+  // Clear all user scales
+  clearAllScales: () => {
+    try {
+      const db = getDatabase();
+      const stmt = db.prepare('DELETE FROM user_scales');
+      stmt.run();
+      console.log('All user scales cleared');
+    } catch (error) {
+      console.error('Error clearing user scales:', error);
     }
   }
 };
