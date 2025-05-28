@@ -287,7 +287,7 @@ export default function Home() {
       </div>
 
       {/* Recent Sessions - Fixed at bottom */}
-      {!isLoading && recentSessions.length > 0 && (
+      {!isLoading && recentSessions.filter(session => session.duration > 0).length > 0 && (
         <div className="mb-6 flex-shrink-0">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-gray-900">Recent Sessions</h2>
@@ -306,7 +306,7 @@ export default function Home() {
           </div>
           
           <div className="space-y-2">
-            {recentSessions.slice(0, 3).map((session) => (
+            {recentSessions.filter(session => session.duration > 0).slice(0, 3).map((session) => (
               <SessionCard 
                 key={session.id} 
                 session={{
@@ -318,18 +318,6 @@ export default function Home() {
               />
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Empty state for new users */}
-      {!isLoading && recentSessions.length === 0 && (
-        <div className="mb-6 flex-shrink-0">
-          <Card className="p-6 text-center bg-gray-50 border-dashed border-2 border-gray-300">
-            <div className="text-gray-500">
-              <div className="text-lg font-medium mb-2">No practice sessions yet</div>
-              <div className="text-sm">Start practicing scales to see your recent sessions here!</div>
-            </div>
-          </Card>
         </div>
       )}
 
