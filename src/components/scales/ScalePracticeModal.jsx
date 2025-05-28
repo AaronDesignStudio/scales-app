@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Eye, ChevronRight, ArrowLeft } from "lucide-react";
 import { useState, useEffect } from "react";
 import { SessionManager } from "@/lib/sessionService";
+import { InlineLoading } from "@/components/ui/loading-state";
 
 const PRACTICE_TYPES = [
   { id: 'right-hand', name: 'Right Hand' },
@@ -32,12 +33,15 @@ export default function ScalePracticeModal({
   const [practicedExercises, setPracticedExercises] = useState(new Set());
   const [bestBPMs, setBestBPMs] = useState({});
   const [lastSessions, setLastSessions] = useState([]);
+  const [isLoadingScaleData, setIsLoadingScaleData] = useState(false);
+  const [isLoadingBPMs, setIsLoadingBPMs] = useState(false);
 
   // Load practiced exercises and last sessions when scale changes
   useEffect(() => {
     const loadScaleData = async () => {
       if (!scale) return;
       
+      setIsLoadingScaleData(true);
       try {
         // Load practiced exercises
         const exercises = await SessionManager.getPracticedExercisesForScale(scale.name);
@@ -50,6 +54,8 @@ export default function ScalePracticeModal({
         console.error('Error loading scale data:', error);
         setPracticedExercises(new Set());
         setLastSessions([]);
+      } finally {
+        setIsLoadingScaleData(false);
       }
     };
 
@@ -61,6 +67,7 @@ export default function ScalePracticeModal({
     const loadBestBPMs = async () => {
       if (!scale || !selectedPracticeType) return;
       
+      setIsLoadingBPMs(true);
       try {
         const bpmPromises = OCTAVE_OPTIONS.map(async (option) => {
           const bestBPM = await SessionManager.getBestBPMForExercise(
@@ -83,6 +90,8 @@ export default function ScalePracticeModal({
       } catch (error) {
         console.error('Error loading best BPMs:', error);
         setBestBPMs({});
+      } finally {
+        setIsLoadingBPMs(false);
       }
     };
 
@@ -165,33 +174,37 @@ export default function ScalePracticeModal({
                   <div className="flex-1 h-px bg-gray-300"></div>
                 </div>
                 
-                <div className="space-y-3">
-                  {PRACTICE_TYPES.map((practiceType) => {
-                    const hasBeenPracticed = practicedExercises.has(practiceType.name);
-                    
-                    return (
-                      <button
-                        key={practiceType.id}
-                        onClick={() => handlePracticeTypeClick(practiceType)}
-                        className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="text-lg font-medium text-gray-900">
-                            {practiceType.name}
-                          </span>
-                          {hasBeenPracticed && (
-                            <Eye className="w-4 h-4 text-blue-600" />
-                          )}
-                        </div>
-                        <ChevronRight className="w-5 h-5 text-gray-400" />
-                      </button>
-                    );
-                  })}
-                </div>
+                {isLoadingScaleData ? (
+                  <InlineLoading message="Loading practice types..." />
+                ) : (
+                  <div className="space-y-3">
+                    {PRACTICE_TYPES.map((practiceType) => {
+                      const hasBeenPracticed = practicedExercises.has(practiceType.name);
+                      
+                      return (
+                        <button
+                          key={practiceType.id}
+                          onClick={() => handlePracticeTypeClick(practiceType)}
+                          className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="text-lg font-medium text-gray-900">
+                              {practiceType.name}
+                            </span>
+                            {hasBeenPracticed && (
+                              <Eye className="w-4 h-4 text-blue-600" />
+                            )}
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-gray-400" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Last Sessions Section */}
-              {lastSessions.length > 0 && (
+              {!isLoadingScaleData && lastSessions.length > 0 && (
                 <div className="mb-6">
                   <div className="flex items-center justify-center mb-4">
                     <div className="flex-1 h-px bg-gray-300"></div>
@@ -232,27 +245,31 @@ export default function ScalePracticeModal({
                 <div className="flex-1 h-px bg-gray-300"></div>
               </div>
               
-              <div className="space-y-3">
-                {OCTAVE_OPTIONS.map((octaveOption) => {
-                  const bestBPM = getBestBPM(octaveOption.octaves);
-                  return (
-                    <button
-                      key={octaveOption.octaves}
-                      onClick={() => handleOctaveClick(octaveOption)}
-                      className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors"
-                    >
-                      <span className="text-lg font-medium text-gray-900">
-                        {octaveOption.label}
-                      </span>
-                      {bestBPM && (
-                        <span className="text-sm text-gray-600 font-medium">
-                          Best: {bestBPM} BPM
+              {isLoadingBPMs ? (
+                <InlineLoading message="Loading best BPMs..." />
+              ) : (
+                <div className="space-y-3">
+                  {OCTAVE_OPTIONS.map((octaveOption) => {
+                    const bestBPM = getBestBPM(octaveOption.octaves);
+                    return (
+                      <button
+                        key={octaveOption.octaves}
+                        onClick={() => handleOctaveClick(octaveOption)}
+                        className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors"
+                      >
+                        <span className="text-lg font-medium text-gray-900">
+                          {octaveOption.label}
                         </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+                        {bestBPM && (
+                          <span className="text-sm text-gray-600 font-medium">
+                            Best: {bestBPM} BPM
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>

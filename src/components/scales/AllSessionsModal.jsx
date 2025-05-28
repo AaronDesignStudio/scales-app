@@ -2,8 +2,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Clock } from "lucide-react";
+import { InlineLoading } from "@/components/ui/loading-state";
 
-export default function AllSessionsModal({ isOpen, onClose, sessions, onStartSession }) {
+export default function AllSessionsModal({ isOpen, onClose, sessions, onStartSession, isLoading = false }) {
   // Format duration from seconds to MM:SS
   const formatDuration = (seconds) => {
     if (!seconds) return "0:00";
@@ -42,7 +43,9 @@ export default function AllSessionsModal({ isOpen, onClose, sessions, onStartSes
         </DialogHeader>
         
         <div className="flex-1 overflow-y-auto space-y-3 mt-4">
-          {sessions.length === 0 ? (
+          {isLoading ? (
+            <InlineLoading message="Loading sessions..." />
+          ) : sessions.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               <div className="text-lg font-medium mb-2">No practice sessions yet</div>
               <div className="text-sm">Start practicing to see your sessions here!</div>

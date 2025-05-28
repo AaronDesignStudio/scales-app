@@ -13,6 +13,9 @@ import Soundfont from 'soundfont-player';
 import * as Tone from 'tone';
 import { SessionManager, DailyPracticeManager } from "@/lib/sessionService";
 import { Suspense } from "react";
+import LoadingOverlay from "@/components/ui/loading-overlay";
+import { SectionLoading, InlineLoading, ButtonLoading } from "@/components/ui/loading-state";
+import { useNavigationLoading } from "@/hooks/useNavigationLoading";
 
 // Available options for modals
 const AVAILABLE_SCALES = [
@@ -42,6 +45,12 @@ const OCTAVE_OPTIONS = [
 function PracticePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  
+  // Navigation loading hook
+  const { isLoading: isNavigating, loadingMessage, navigateBack } = useNavigationLoading({
+    defaultMessage: "Going back...",
+    minLoadingTime: 300
+  });
   
   // Extract URL parameters with fallbacks
   const scale = searchParams.get('scale') || 'C Major';
@@ -86,6 +95,7 @@ function PracticePageContent() {
   
   // Client-side mounting state to prevent hydration mismatches
   const [isMounted, setIsMounted] = useState(false);
+  const [isInitialDataLoading, setIsInitialDataLoading] = useState(true);
 
   // Session tracking state
   const [currentSessionData, setCurrentSessionData] = useState(null);
@@ -123,6 +133,8 @@ function PracticePageContent() {
   useEffect(() => {
     const loadBPMData = async () => {
       try {
+        setIsInitialDataLoading(true);
+        
         // Load best BPM
         const bestBPMValue = await SessionManager.getBestBPMForExercise(scale, practiceType, octaves);
         setBestBPM(bestBPMValue);
@@ -134,11 +146,13 @@ function PracticePageContent() {
       } catch (error) {
         console.error('Error loading BPM data:', error);
         setBestBPM(null);
+      } finally {
+        setIsInitialDataLoading(false);
       }
     };
 
     loadBPMData();
-  }, [scale, practiceType, octaves]); // Re-run when any config changes
+  }, [scale, practiceType, octaves]);
 
   // Get user's best BPM for this scale and configuration
   const getUserBestBPM = async (scale, practiceType, octaves) => {
@@ -373,7 +387,7 @@ function PracticePageContent() {
   }, [currentSessionData]);
 
   const handleGoBack = () => {
-    router.push('/');
+    navigateBack("Returning to scales...");
   };
 
   // Session management functions
@@ -1101,8 +1115,46 @@ function PracticePageContent() {
   if (!isMounted) {
     return (
       <div className="min-h-screen bg-gray-50 p-4 max-w-md mx-auto">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-lg text-gray-600">Loading...</div>
+        <SectionLoading message="Loading practice session..." />
+      </div>
+    );
+  }
+
+  // Show loading while initial data is being fetched
+  if (isInitialDataLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-4 max-w-md mx-auto">
+        <SectionLoading message="Preparing practice session..." />
+      </div>
+    );
+  }
+
+  // Show loading while audio is being initialized
+  if (audioLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-4 max-w-md mx-auto">
+        <SectionLoading message="Loading audio engine..." />
+      </div>
+    );
+  }
+
+  // Show error state if audio failed to load
+  if (audioError) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-4 max-w-md mx-auto">
+        <div className="flex items-center justify-center min-h-screen">
+          <Card className="p-6 max-w-md mx-4 text-center">
+            <div className="text-red-600 mb-4">
+              <div className="text-lg font-medium mb-2">Audio Error</div>
+              <div className="text-sm">{audioError}</div>
+            </div>
+            <Button 
+              onClick={() => window.location.reload()}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              Retry
+            </Button>
+          </Card>
         </div>
       </div>
     );
@@ -1122,12 +1174,18 @@ function PracticePageContent() {
         </Button>
       </div>
 
-      {/* Audio Status Debug Info */}
+      {/* Audio Status with improved loading */}
       {(audioLoading || audioError) && (
-        <Card className="p-4 mb-4 bg-yellow-50 border-yellow-200">
-          {audioLoading && <p className="text-yellow-800">Loading audio... Please wait.</p>}
-          {audioError && <p className="text-red-800">Audio Error: {audioError}</p>}
-        </Card>
+        <div className="mb-4">
+          {audioLoading && (
+            <SectionLoading message="Loading audio engine..." />
+          )}
+          {audioError && (
+            <Card className="p-4 bg-red-50 border-red-200">
+              <p className="text-red-800">Audio Error: {audioError}</p>
+            </Card>
+          )}
+        </div>
       )}
 
       {/* Practice Configuration */}
@@ -1218,10 +1276,16 @@ function PracticePageContent() {
           </Button>
           <Button
             onClick={handlePlayPause}
-            className="w-24 h-16 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+            className="w-24 h-16 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50"
             disabled={audioLoading}
           >
-            {isPlaying ? <Pause className="w-8 h-8" /> : <Play className="w-8 h-8 ml-1" />}
+            {audioLoading ? (
+              <ButtonLoading message="" />
+            ) : isPlaying ? (
+              <Pause className="w-8 h-8" />
+            ) : (
+              <Play className="w-8 h-8 ml-1" />
+            )}
           </Button>
           <Button
             variant="outline"
@@ -1453,13 +1517,24 @@ function PracticePageContent() {
           background: #1d4ed8 !important;
         }
       `}</style>
+
+      {/* Navigation Loading Overlay */}
+      <LoadingOverlay 
+        isVisible={isNavigating} 
+        message={loadingMessage}
+        variant="primary"
+      />
     </div>
   );
 }
 
 export default function PracticePage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center">Loading...</div>}>
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 p-4 max-w-md mx-auto">
+        <SectionLoading message="Loading practice page..." />
+      </div>
+    }>
       <PracticePageContent />
     </Suspense>
   );

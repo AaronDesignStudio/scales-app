@@ -9,11 +9,20 @@ import ScaleCard from "@/components/scales/ScaleCard";
 import SessionCard from "@/components/scales/SessionCard";
 import ScalePracticeModal from "@/components/scales/ScalePracticeModal";
 import AllSessionsModal from "@/components/scales/AllSessionsModal";
+import LoadingOverlay from "@/components/ui/loading-overlay";
+import { SectionLoading, InlineLoading } from "@/components/ui/loading-state";
+import { useNavigationLoading } from "@/hooks/useNavigationLoading";
 import { INITIAL_SCALES } from "@/data/scales";
 import { SessionManager } from "@/lib/sessionService";
 
 export default function Home() {
   const router = useRouter();
+  
+  // Navigation loading hook
+  const { isLoading: isNavigating, loadingMessage, navigateWithLoading } = useNavigationLoading({
+    defaultMessage: "Loading...",
+    minLoadingTime: 300
+  });
   
   // Use real sessions from SQLite database instead of localStorage
   const [recentSessions, setRecentSessions] = useState([]);
@@ -24,6 +33,7 @@ export default function Home() {
   // State for All Sessions Modal
   const [showAllSessionsModal, setShowAllSessionsModal] = useState(false);
   const [allSessions, setAllSessions] = useState([]);
+  const [isLoadingAllSessions, setIsLoadingAllSessions] = useState(false);
 
   // Add refs to track component state
   const fetchingRef = useRef(false);
@@ -188,50 +198,53 @@ export default function Home() {
   };
 
   const handleSelectOctave = (scale, practiceType, octaveOption) => {
-    // Navigate to practice page with configuration
+    // Navigate to practice page with configuration using loading hook
     const params = new URLSearchParams({
       scale: scale.name,
       type: practiceType.name,
       octaves: octaveOption.octaves.toString()
     });
     
-    router.push(`/practice?${params.toString()}`);
+    navigateWithLoading(`/practice?${params.toString()}`, `Starting ${scale.name} practice...`);
   };
 
   const handleStartLastSession = (session) => {
-    // Navigate to practice page with the session's configuration
+    // Navigate to practice page with the session's configuration using loading hook
     const params = new URLSearchParams({
       scale: session.scale,
       type: session.practice_type || session.practiceType || session.hand || session.pattern,
       octaves: session.octaves.toString()
     });
     
-    router.push(`/practice?${params.toString()}`);
+    navigateWithLoading(`/practice?${params.toString()}`, `Resuming ${session.scale} practice...`);
   };
 
   const handleStartSession = (session) => {
-    // Navigate to practice page with the session's configuration
+    // Navigate to practice page with the session's configuration using loading hook
     const params = new URLSearchParams({
       scale: session.scale,
       type: session.practice_type || session.practiceType || session.hand || session.pattern,
       octaves: session.octaves.toString()
     });
     
-    router.push(`/practice?${params.toString()}`);
+    navigateWithLoading(`/practice?${params.toString()}`, `Starting ${session.scale} practice...`);
   };
 
   const handleStartWorkout = () => {
-    // TODO: Implement workout session functionality
-    console.log("Start workout session");
+    // Navigate to workout session using loading hook
+    navigateWithLoading('/workout', 'Starting workout session...');
   };
 
   const handleViewAllSessions = async () => {
+    setIsLoadingAllSessions(true);
     try {
       const sessions = await SessionManager.getLast20Sessions();
       setAllSessions(sessions);
       setShowAllSessionsModal(true);
     } catch (error) {
       console.error('Error loading all sessions:', error);
+    } finally {
+      setIsLoadingAllSessions(false);
     }
   };
 
@@ -251,15 +264,13 @@ export default function Home() {
       {/* Header - Fixed */}
       <div className="flex items-center justify-between mb-6 pt-4 flex-shrink-0">
         <h1 className="text-2xl font-bold text-gray-900">My Scales</h1>
-        <div className="flex items-center gap-2">
-          <Button 
-            onClick={handleAddScale}
-            className="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6 py-2"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add Scale
-          </Button>
-        </div>
+        <Button 
+          onClick={handleAddScale}
+          className="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6 py-2"
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Add Scale
+        </Button>
       </div>
 
       {/* Scales List - Scrollable */}
@@ -283,9 +294,14 @@ export default function Home() {
             <Button 
               variant="ghost" 
               onClick={handleViewAllSessions}
-              className="text-blue-600 hover:text-blue-700 p-0"
+              disabled={isLoadingAllSessions}
+              className="text-blue-600 hover:text-blue-700 p-0 disabled:opacity-50"
             >
-              View all
+              {isLoadingAllSessions ? (
+                <InlineLoading message="Loading..." />
+              ) : (
+                "View all"
+              )}
             </Button>
           </div>
           
@@ -320,12 +336,7 @@ export default function Home() {
       {/* Loading state */}
       {isLoading && (
         <div className="mb-6 flex-shrink-0">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-gray-900">Recent Sessions</h2>
-          </div>
-          <Card className="p-6 text-center">
-            <div className="text-gray-500">Loading sessions...</div>
-          </Card>
+          <SectionLoading message="Loading recent sessions..." />
         </div>
       )}
 
@@ -362,6 +373,14 @@ export default function Home() {
           practiceType: session.practice_type || session.practiceType,
         }))}
         onStartSession={handleStartSession}
+        isLoading={isLoadingAllSessions}
+      />
+
+      {/* Navigation Loading Overlay */}
+      <LoadingOverlay 
+        isVisible={isNavigating} 
+        message={loadingMessage}
+        variant="primary"
       />
     </div>
   );
