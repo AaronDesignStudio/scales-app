@@ -1,6 +1,5 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CheckCircle } from "lucide-react";
 
 export default function SessionCard({ session, onStart }) {
   return (
@@ -10,9 +9,6 @@ export default function SessionCard({ session, onStart }) {
           <p className="text-blue-600 font-medium text-sm truncate">
             {session.scale}
           </p>
-          {session.completed && (
-            <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0" />
-          )}
           <span className="text-xs text-gray-600 truncate">
             {session.practiceType || session.hand || session.pattern}, {session.octaves} Oct, {session.bpm} BPM
           </span>

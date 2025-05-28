@@ -400,8 +400,7 @@ export default function PracticePage() {
       practiceType: practiceType,
       octaves: parseInt(octaves),
       bpm: currentBPM,
-      duration: sessionDuration,
-      completed: currentSessionData.completed || false
+      duration: sessionDuration
     };
 
     // Use the new saveUniqueSession method to handle duplicates
@@ -420,7 +419,6 @@ export default function PracticePage() {
       practiceType: practiceType,
       octaves: parseInt(octaves),
       bpm: currentBPM,
-      completed: false,
       hasActuallyPracticed: false // Flag to track if user actually practiced
     };
     
@@ -441,16 +439,9 @@ export default function PracticePage() {
         practiceType: practiceType,
         octaves: parseInt(octaves),
         bpm: currentBPM,
-        completed: false,
         hasActuallyPracticed: true // Mark as practiced immediately
       };
       setCurrentSessionData(newSessionData);
-    }
-  };
-
-  const completeCurrentSession = () => {
-    if (currentSessionData) {
-      setCurrentSessionData(prev => ({ ...prev, completed: true }));
     }
   };
 

@@ -1,7 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Clock, CheckCircle } from "lucide-react";
+import { Clock } from "lucide-react";
 
 export default function AllSessionsModal({ isOpen, onClose, sessions, onStartSession }) {
   // Format duration from seconds to MM:SS
@@ -56,9 +56,6 @@ export default function AllSessionsModal({ isOpen, onClose, sessions, onStartSes
                       <p className="text-blue-600 font-medium">
                         {session.scale}
                       </p>
-                      {session.completed && (
-                        <CheckCircle className="w-4 h-4 text-green-500" />
-                      )}
                     </div>
                     
                     <div className="text-sm text-gray-600 space-y-1">

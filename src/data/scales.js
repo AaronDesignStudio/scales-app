@@ -211,5 +211,66 @@ export const SessionManager = {
       console.error('Error getting practiced exercises:', error);
       return [];
     }
+  },
+
+  // Get the best (highest) BPM for a specific exercise configuration
+  getBestBPMForExercise: (scale, practiceType, octaves) => {
+    try {
+      const sessions = SessionManager.getAllSessions();
+      let bestBPM = null;
+      
+      // Helper function to normalize practice type names for comparison
+      const normalizePracticeType = (type) => {
+        if (!type) return '';
+        return type.toLowerCase()
+                  .replace(/\s+/g, ' ')  // normalize whitespace
+                  .trim();
+      };
+      
+      const targetType = normalizePracticeType(practiceType);
+      
+      sessions.forEach(session => {
+        if (session.scale === scale && session.octaves === parseInt(octaves)) {
+          const sessionPracticeType = session.practiceType || session.hand || session.pattern;
+          const sessionType = normalizePracticeType(sessionPracticeType);
+          
+          // Check if practice types match
+          if (sessionType === targetType) {
+            if (bestBPM === null || session.bpm > bestBPM) {
+              bestBPM = session.bpm;
+            }
+          }
+        }
+      });
+      
+      console.log(`Best BPM search for "${scale}" - "${practiceType}" - ${octaves} octaves: ${bestBPM}`);
+      return bestBPM;
+    } catch (error) {
+      console.error('Error getting best BPM:', error);
+      return null;
+    }
+  },
+
+  // Debug function to see what practice types are stored for a scale
+  debugPracticeTypesForScale: (scale) => {
+    try {
+      const sessions = SessionManager.getAllSessions();
+      const practiceTypes = new Set();
+      
+      sessions.forEach(session => {
+        if (session.scale === scale) {
+          const practiceType = session.practiceType || session.hand || session.pattern;
+          if (practiceType) {
+            practiceTypes.add(`"${practiceType}" (octaves: ${session.octaves}, bpm: ${session.bpm})`);
+          }
+        }
+      });
+      
+      console.log(`Practice types stored for ${scale}:`, Array.from(practiceTypes));
+      return Array.from(practiceTypes);
+    } catch (error) {
+      console.error('Error debugging practice types:', error);
+      return [];
+    }
   }
 }; 

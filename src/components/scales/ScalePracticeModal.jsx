@@ -1,15 +1,15 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Eye, ChevronRight, ArrowLeft, Hand, Users, Zap, RotateCcw } from "lucide-react";
+import { Eye, ChevronRight, ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import { SessionManager } from "@/data/scales";
 
 const PRACTICE_TYPES = [
-  { id: 'right-hand', name: 'Right Hand', icon: Hand },
-  { id: 'left-hand', name: 'Left Hand', icon: Hand },
-  { id: 'two-hands', name: 'Two Hands', icon: Users },
-  { id: 'contrary-motion', name: 'Contrary Motion', icon: RotateCcw },
-  { id: 'staccato', name: 'Staccato', icon: Zap },
+  { id: 'right-hand', name: 'Right Hand' },
+  { id: 'left-hand', name: 'Left Hand' },
+  { id: 'two-hands', name: 'Two Hands' },
+  { id: 'contrary-motion', name: 'Contrary Motion' },
+  { id: 'staccato', name: 'Staccato' },
 ];
 
 const OCTAVE_OPTIONS = [
@@ -61,8 +61,12 @@ export default function ScalePracticeModal({
   };
 
   const getBestBPM = (octaves) => {
-    const progressKey = `${scale.name}-${selectedPracticeType?.id}-${octaves}`;
-    return userProgress[progressKey]?.bestBPM || null;
+    if (!selectedPracticeType) return null;
+    
+    // Debug: show what practice types are stored for this scale
+    SessionManager.debugPracticeTypesForScale(scale.name);
+    
+    return SessionManager.getBestBPMForExercise(scale.name, selectedPracticeType.name, octaves);
   };
 
   const getModalTitle = () => {
@@ -108,7 +112,6 @@ export default function ScalePracticeModal({
                 
                 <div className="space-y-3">
                   {PRACTICE_TYPES.map((practiceType) => {
-                    const IconComponent = practiceType.icon;
                     const hasBeenPracticed = SessionManager.hasExerciseBeenPracticed(scale.name, practiceType.name);
                     
                     return (
@@ -118,7 +121,6 @@ export default function ScalePracticeModal({
                         className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors"
                       >
                         <div className="flex items-center gap-3">
-                          <IconComponent className="w-5 h-5 text-gray-600" />
                           <span className="text-lg font-medium text-gray-900">
                             {practiceType.name}
                           </span>
