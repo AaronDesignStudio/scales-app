@@ -119,6 +119,12 @@ export const SessionManager = {
     return sessions.slice(0, 10);
   },
 
+  // Get last 20 sessions for "View All" modal
+  getLast20Sessions: () => {
+    const sessions = SessionManager.getAllSessions();
+    return sessions.slice(0, 20);
+  },
+
   // Get sessions for a specific scale
   getSessionsForScale: (scaleName) => {
     const sessions = SessionManager.getAllSessions();
@@ -167,5 +173,43 @@ export const SessionManager = {
     });
     
     return mostPracticed;
+  },
+
+  // Check if a specific exercise has been practiced before
+  hasExerciseBeenPracticed: (scale, practiceType) => {
+    try {
+      const sessions = SessionManager.getAllSessions();
+      return sessions.some(session => {
+        return session.scale === scale && 
+               (session.practiceType === practiceType || 
+                session.hand === practiceType || 
+                session.pattern === practiceType);
+      });
+    } catch (error) {
+      console.error('Error checking exercise history:', error);
+      return false;
+    }
+  },
+
+  // Get all practiced exercise combinations for a specific scale
+  getPracticedExercisesForScale: (scale) => {
+    try {
+      const sessions = SessionManager.getAllSessions();
+      const practicedTypes = new Set();
+      
+      sessions.forEach(session => {
+        if (session.scale === scale) {
+          const practiceType = session.practiceType || session.hand || session.pattern;
+          if (practiceType) {
+            practicedTypes.add(practiceType);
+          }
+        }
+      });
+      
+      return Array.from(practicedTypes);
+    } catch (error) {
+      console.error('Error getting practiced exercises:', error);
+      return [];
+    }
   }
 }; 

@@ -1,6 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Eye } from "lucide-react";
+import { SessionManager } from "@/data/scales";
 
 const getLevelColor = (level) => {
   switch (level) {
@@ -16,6 +17,8 @@ const getLevelColor = (level) => {
 };
 
 export default function ScaleCard({ scale, onClick }) {
+  const hasBeenPracticed = SessionManager.getPracticedExercisesForScale(scale.name).length > 0;
+  
   return (
     <Card 
       className="p-4 bg-white border border-gray-200 rounded-lg cursor-pointer hover:shadow-md transition-shadow"
@@ -23,7 +26,12 @@ export default function ScaleCard({ scale, onClick }) {
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Eye className="w-5 h-5 text-gray-600" />
+          {hasBeenPracticed && (
+            <Eye className="w-5 h-5 text-gray-600" />
+          )}
+          {!hasBeenPracticed && (
+            <div className="w-5 h-5" /> // Placeholder to maintain spacing
+          )}
           <span className="text-lg font-medium text-gray-900">{scale.name}</span>
         </div>
         <Badge className={`text-white px-3 py-1 rounded-full text-sm ${getLevelColor(scale.level)}`}>

@@ -8,6 +8,7 @@ import { Plus } from "lucide-react";
 import ScaleCard from "@/components/scales/ScaleCard";
 import SessionCard from "@/components/scales/SessionCard";
 import ScalePracticeModal from "@/components/scales/ScalePracticeModal";
+import AllSessionsModal from "@/components/scales/AllSessionsModal";
 import { INITIAL_SCALES, SAMPLE_SESSIONS, SCALE_LAST_SESSIONS, USER_PROGRESS, SessionManager } from "@/data/scales";
 
 export default function Home() {
@@ -18,6 +19,10 @@ export default function Home() {
   const [selectedScale, setSelectedScale] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // State for All Sessions Modal
+  const [showAllSessionsModal, setShowAllSessionsModal] = useState(false);
+  const [allSessions, setAllSessions] = useState([]);
 
   // Load real sessions on component mount
   useEffect(() => {
@@ -83,13 +88,25 @@ export default function Home() {
   };
 
   const handleStartLastSession = (session) => {
-    // TODO: Start the specific last session
-    console.log("Start last session:", session);
+    // Navigate to practice page with the session's configuration
+    const params = new URLSearchParams({
+      scale: session.scale,
+      type: session.practiceType || session.hand || session.pattern,
+      octaves: session.octaves.toString()
+    });
+    
+    router.push(`/practice?${params.toString()}`);
   };
 
   const handleStartSession = (session) => {
-    // TODO: Implement start session functionality
-    console.log("Start session:", session);
+    // Navigate to practice page with the session's configuration
+    const params = new URLSearchParams({
+      scale: session.scale,
+      type: session.practiceType || session.hand || session.pattern,
+      octaves: session.octaves.toString()
+    });
+    
+    router.push(`/practice?${params.toString()}`);
   };
 
   const handleStartWorkout = () => {
@@ -98,8 +115,13 @@ export default function Home() {
   };
 
   const handleViewAllSessions = () => {
-    // TODO: Implement view all sessions functionality
-    console.log("View all sessions");
+    try {
+      const sessions = SessionManager.getLast20Sessions();
+      setAllSessions(sessions);
+      setShowAllSessionsModal(true);
+    } catch (error) {
+      console.error('Error loading all sessions:', error);
+    }
   };
 
   const getLastSessionsForScale = (scale) => {
@@ -156,7 +178,7 @@ export default function Home() {
             </Button>
           </div>
           
-          <div className="space-y-3">
+          <div className="space-y-2">
             {recentSessions.slice(0, 3).map((session) => (
               <SessionCard 
                 key={session.id} 
@@ -215,6 +237,14 @@ export default function Home() {
         userProgress={USER_PROGRESS}
         onSelectOctave={handleSelectOctave}
         onStartLastSession={handleStartLastSession}
+      />
+
+      {/* All Sessions Modal */}
+      <AllSessionsModal
+        isOpen={showAllSessionsModal}
+        onClose={() => setShowAllSessionsModal(false)}
+        sessions={allSessions}
+        onStartSession={handleStartSession}
       />
     </div>
   );

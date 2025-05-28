@@ -1,14 +1,15 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Eye, ChevronRight, ArrowLeft } from "lucide-react";
+import { Eye, ChevronRight, ArrowLeft, Hand, Users, Zap, RotateCcw } from "lucide-react";
 import { useState } from "react";
+import { SessionManager } from "@/data/scales";
 
 const PRACTICE_TYPES = [
-  { id: 'right-hand', name: 'Right Hand', icon: Eye },
-  { id: 'left-hand', name: 'Left Hand', icon: Eye },
-  { id: 'two-hands', name: 'Two Hands', icon: Eye },
-  { id: 'contrary-motion', name: 'Contrary Motion', icon: Eye },
-  { id: 'staccato', name: 'Staccato', icon: Eye },
+  { id: 'right-hand', name: 'Right Hand', icon: Hand },
+  { id: 'left-hand', name: 'Left Hand', icon: Hand },
+  { id: 'two-hands', name: 'Two Hands', icon: Users },
+  { id: 'contrary-motion', name: 'Contrary Motion', icon: RotateCcw },
+  { id: 'staccato', name: 'Staccato', icon: Zap },
 ];
 
 const OCTAVE_OPTIONS = [
@@ -108,6 +109,8 @@ export default function ScalePracticeModal({
                 <div className="space-y-3">
                   {PRACTICE_TYPES.map((practiceType) => {
                     const IconComponent = practiceType.icon;
+                    const hasBeenPracticed = SessionManager.hasExerciseBeenPracticed(scale.name, practiceType.name);
+                    
                     return (
                       <button
                         key={practiceType.id}
@@ -119,6 +122,9 @@ export default function ScalePracticeModal({
                           <span className="text-lg font-medium text-gray-900">
                             {practiceType.name}
                           </span>
+                          {hasBeenPracticed && (
+                            <Eye className="w-4 h-4 text-blue-600" />
+                          )}
                         </div>
                         <ChevronRight className="w-5 h-5 text-gray-400" />
                       </button>
@@ -141,6 +147,7 @@ export default function ScalePracticeModal({
                       <div key={session.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
                         <div>
                           <p className="text-blue-600 font-medium text-sm">
+                            {session.practiceType && `${session.practiceType}, `}
                             {session.hand && `${session.hand}, `}
                             {session.pattern && `${session.pattern}, `}
                             {session.octaves} Octaves, {session.bpm} BPM
