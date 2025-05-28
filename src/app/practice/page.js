@@ -11,7 +11,8 @@ import { Piano, KeyboardShortcuts, MidiNumbers } from 'react-piano';
 import 'react-piano/dist/styles.css';
 import Soundfont from 'soundfont-player';
 import * as Tone from 'tone';
-import { USER_PROGRESS, SessionManager } from "@/data/scales";
+import { SessionManager, DailyPracticeManager } from "@/lib/sessionService";
+import { Suspense } from "react";
 
 // Available options for modals
 const AVAILABLE_SCALES = [
@@ -38,14 +39,14 @@ const OCTAVE_OPTIONS = [
   { value: '4', label: '4 Octaves' }
 ];
 
-export default function PracticePage() {
+function PracticePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
-  // Practice configuration from URL params
+  // Extract URL parameters with fallbacks
   const scale = searchParams.get('scale') || 'C Major';
   const practiceType = searchParams.get('type') || 'Right Hand';
-  const octaves = searchParams.get('octaves') || '1';
+  const octaves = searchParams.get('octaves') || '2';
   
   // Practice state
   const [currentBPM, setCurrentBPM] = useState(60); // Default to 60 BPM
@@ -118,78 +119,72 @@ export default function PracticePage() {
     };
   }, []);
 
-  // Get best BPM for this specific configuration
-  const getBestBPMForConfiguration = () => {
-    const practiceTypeId = practiceType.toLowerCase().replace(/\s+/g, '-');
-    const progressKey = `${scale}-${practiceTypeId}-${octaves}`;
-    return USER_PROGRESS[progressKey]?.bestBPM || null;
+  // Load best BPM and last used BPM when configuration changes
+  useEffect(() => {
+    const loadBPMData = async () => {
+      try {
+        // Load best BPM
+        const bestBPMValue = await SessionManager.getBestBPMForExercise(scale, practiceType, octaves);
+        setBestBPM(bestBPMValue);
+
+        // Load last used BPM
+        const lastBPM = await getLastBPMForConfiguration();
+        console.log(`Loading BPM for ${scale} - ${practiceType} - ${octaves} octaves: ${lastBPM}`);
+        setCurrentBPM(lastBPM);
+      } catch (error) {
+        console.error('Error loading BPM data:', error);
+        setBestBPM(null);
+      }
+    };
+
+    loadBPMData();
+  }, [scale, practiceType, octaves]); // Re-run when any config changes
+
+  // Get user's best BPM for this scale and configuration
+  const getUserBestBPM = async (scale, practiceType, octaves) => {
+    try {
+      const bestBPM = await SessionManager.getBestBPMForExercise(scale, practiceType, octaves);
+      return bestBPM;
+    } catch (error) {
+      console.error('Error getting best BPM:', error);
+      return null;
+    }
   };
 
   // Get/Set last used BPM for this configuration
-  const getLastBPMForConfiguration = () => {
+  const getLastBPMForConfiguration = async () => {
     const practiceTypeId = practiceType.toLowerCase().replace(/\s+/g, '-');
     const configKey = `bpm-${scale}-${practiceTypeId}-${octaves}`;
-    const savedBPM = localStorage.getItem(configKey);
-    return savedBPM ? parseInt(savedBPM) : 60; // Default to 60 if never practiced
+    
+    try {
+      const response = await fetch(`/api/bpm-config?key=${encodeURIComponent(configKey)}`);
+      const data = await response.json();
+      return data.bpm || 60; // Default to 60 if not found
+    } catch (error) {
+      console.error('Error loading BPM config:', error);
+      return 60; // Default to 60 if error
+    }
   };
 
-  const saveLastBPMForConfiguration = (bpm) => {
+  const saveLastBPMForConfiguration = async (bpm) => {
     const practiceTypeId = practiceType.toLowerCase().replace(/\s+/g, '-');
     const configKey = `bpm-${scale}-${practiceTypeId}-${octaves}`;
-    localStorage.setItem(configKey, bpm.toString());
-    console.log(`Saved BPM ${bpm} for configuration: ${configKey}`);
+    
+    try {
+      await fetch('/api/bpm-config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ configKey, bpm }),
+      });
+      console.log(`Saved BPM ${bpm} for configuration: ${configKey}`);
+    } catch (error) {
+      console.error('Error saving BPM config:', error);
+    }
   };
 
-  const [bestBPM, setBestBPM] = useState(getBestBPMForConfiguration());
-
-  // Load last used BPM when configuration changes
-  useEffect(() => {
-    const lastBPM = getLastBPMForConfiguration();
-    console.log(`Loading BPM for ${scale} - ${practiceType} - ${octaves} octaves: ${lastBPM}`);
-    setCurrentBPM(lastBPM);
-  }, [scale, practiceType, octaves]); // Re-run when any config changes
-
-  // Update best BPM when it changes
-  useEffect(() => {
-    setBestBPM(getBestBPMForConfiguration());
-  }, [scale, practiceType, octaves]);
-
-  // Reset session when configuration changes
-  useEffect(() => {
-    // Skip on initial mount - only run when configuration actually changes
-    if (!isMounted) return;
-    
-    // Don't interfere during active practice sessions
-    if (isInActivePractice) {
-      return;
-    }
-    
-    // If there's an active session and configuration changed, save it first
-    if (currentSessionData && currentSessionData.hasActuallyPracticed) {
-      saveCurrentSession();
-    } else if (currentSessionData) {
-      // Just clear the session data if user didn't actually practice
-      setCurrentSessionData(null);
-    }
-    
-    // Stop any active playback when configuration changes
-    if (isPlaying) {
-      setIsPlaying(false);
-      isPlayingRef.current = false;
-      setIsMetronomeMode(false);
-      setActiveNotes([]);
-      
-      if (scalePlaybackRef.current) {
-        clearTimeout(scalePlaybackRef.current);
-        scalePlaybackRef.current = null;
-      }
-      
-      if (metronomeRef.current) {
-        clearTimeout(metronomeRef.current);
-        metronomeRef.current = null;
-      }
-    }
-  }, [scale, practiceType, octaves, isMounted, isInActivePractice]);
+  const [bestBPM, setBestBPM] = useState(null);
 
   // Initialize audio context and soundfont
   useEffect(() => {
@@ -258,97 +253,96 @@ export default function PracticePage() {
     }
   }, [isPlaying, sessionStartTime]);
 
-  // Load daily practice time from localStorage on component mount
+  // Load daily practice time from database on component mount
   useEffect(() => {
-    const loadDailyPracticeTime = () => {
+    const loadDailyPracticeTime = async () => {
       const now = new Date();
       const today = now.toDateString();
-      const savedData = localStorage.getItem('dailyPracticeData');
       
-      if (savedData) {
-        try {
-          const practiceData = JSON.parse(savedData);
-          
-          if (practiceData.date === today) {
+      try {
+        const savedData = await DailyPracticeManager.getDailyPracticeData(today);
+        
+        if (savedData) {
+          if (savedData.date === today) {
             // Same day - continue from saved time
-            console.log('Continuing practice time from:', practiceData.time, 'seconds');
-            setDailyPracticeTime(practiceData.time);
+            console.log('Continuing practice time from:', savedData.total_time, 'seconds');
+            setDailyPracticeTime(savedData.total_time);
           } else {
             // New day - reset to 0 and save
             console.log('New day detected, resetting practice time');
             setDailyPracticeTime(0);
-            localStorage.setItem('dailyPracticeData', JSON.stringify({
+            await DailyPracticeManager.saveDailyPracticeData({
               date: today,
               time: 0,
               lastUpdated: now.toISOString()
-            }));
+            });
           }
-        } catch (error) {
-          console.error('Error parsing practice data:', error);
-          // Reset if corrupted
+        } else {
+          // First time - start from 0
+          console.log('First time using app, starting practice time at 0');
           setDailyPracticeTime(0);
-          localStorage.setItem('dailyPracticeData', JSON.stringify({
+          await DailyPracticeManager.saveDailyPracticeData({
             date: today,
             time: 0,
             lastUpdated: now.toISOString()
-          }));
+          });
         }
-      } else {
-        // First time - start from 0
-        console.log('First time using app, starting practice time at 0');
+      } catch (error) {
+        console.error('Error loading practice data:', error);
+        // Fallback to 0 if there's an error
         setDailyPracticeTime(0);
-        localStorage.setItem('dailyPracticeData', JSON.stringify({
-          date: today,
-          time: 0,
-          lastUpdated: now.toISOString()
-        }));
       }
     };
 
     loadDailyPracticeTime();
   }, []);
 
-  // Save daily practice time to localStorage when it changes
+  // Save daily practice time to database when it changes
   useEffect(() => {
-    if (dailyPracticeTime > 0) { // Only save if there's actual practice time
-      const now = new Date();
-      const today = now.toDateString();
-      
-      const practiceData = {
-        date: today,
-        time: dailyPracticeTime,
-        lastUpdated: now.toISOString()
-      };
-      
-      localStorage.setItem('dailyPracticeData', JSON.stringify(practiceData));
-      console.log('Saved practice time:', dailyPracticeTime, 'seconds');
-    }
+    const saveDailyPracticeTime = async () => {
+      if (dailyPracticeTime > 0) { // Only save if there's actual practice time
+        const now = new Date();
+        const today = now.toDateString();
+        
+        const practiceData = {
+          date: today,
+          time: dailyPracticeTime,
+          lastUpdated: now.toISOString()
+        };
+        
+        try {
+          await DailyPracticeManager.saveDailyPracticeData(practiceData);
+          console.log('Saved practice time:', dailyPracticeTime, 'seconds');
+        } catch (error) {
+          console.error('Error saving practice time:', error);
+        }
+      }
+    };
+
+    saveDailyPracticeTime();
   }, [dailyPracticeTime]);
 
   // Check for date change every minute to handle midnight rollover
   useEffect(() => {
-    const checkDateChange = () => {
+    const checkDateChange = async () => {
       const now = new Date();
       const today = now.toDateString();
-      const savedData = localStorage.getItem('dailyPracticeData');
       
-      if (savedData) {
-        try {
-          const practiceData = JSON.parse(savedData);
-          
-          if (practiceData.date !== today) {
-            // Date has changed (midnight passed) - reset to 0
-            console.log('Midnight passed, resetting practice time to 0');
-            setDailyPracticeTime(0);
-            localStorage.setItem('dailyPracticeData', JSON.stringify({
-              date: today,
-              time: 0,
-              lastUpdated: now.toISOString()
-            }));
-          }
-        } catch (error) {
-          console.error('Error checking date change:', error);
+      try {
+        const savedData = await DailyPracticeManager.getDailyPracticeData();
+        
+        if (savedData && savedData.date !== today) {
+          // Date has changed (midnight passed) - reset to 0
+          console.log('Midnight passed, resetting practice time to 0');
+          setDailyPracticeTime(0);
+          await DailyPracticeManager.saveDailyPracticeData({
+            date: today,
+            time: 0,
+            lastUpdated: now.toISOString()
+          });
         }
+      } catch (error) {
+        console.error('Error checking date change:', error);
       }
     };
 
@@ -383,7 +377,7 @@ export default function PracticePage() {
   };
 
   // Session management functions
-  const saveCurrentSession = () => {
+  const saveCurrentSession = async () => {
     if (!currentSessionData || !currentSessionData.hasActuallyPracticed) {
       return;
     }
@@ -403,8 +397,13 @@ export default function PracticePage() {
       duration: sessionDuration
     };
 
-    // Use the new saveUniqueSession method to handle duplicates
-    const savedSession = SessionManager.saveUniqueSession(sessionToSave);
+    try {
+      // Use the new saveUniqueSession method to handle duplicates
+      const savedSession = await SessionManager.saveUniqueSession(sessionToSave);
+      console.log('Session saved successfully:', savedSession);
+    } catch (error) {
+      console.error('Error saving session:', error);
+    }
     
     // Clear current session data after a small delay to ensure save completes
     setTimeout(() => {
@@ -869,40 +868,87 @@ export default function PracticePage() {
     }
   };
 
-  // Test audio context for Chrome debugging
-  const testAudioContext = async () => {
-    try {
-      console.log('=== TESTING AUDIO CONTEXT ===');
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      const testContext = new AudioContextClass();
-      
-      console.log('Test context created:', testContext.state);
-      console.log('Test context sample rate:', testContext.sampleRate);
-      
-      if (testContext.state === 'suspended') {
-        console.log('Resuming test context...');
-        await testContext.resume();
-        console.log('Test context after resume:', testContext.state);
-      }
-      
-      // Test oscillator
-      const oscillator = testContext.createOscillator();
-      const gainNode = testContext.createGain();
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(testContext.destination);
-      
-      oscillator.frequency.value = 440;
-      gainNode.gain.value = 0.1;
-      
-      oscillator.start();
-      oscillator.stop(testContext.currentTime + 0.2);
-      
-      console.log('Audio context test completed');
-      testContext.close();
-      
-    } catch (error) {
-      console.error('Audio context test failed:', error);
+  // Essential utility functions that were accidentally removed
+  const formatTime = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
+  // Get scale information
+  const getScaleInfo = () => {
+    const [scaleName, scaleType] = scale.split(' ');
+    return { name: scaleName, type: scaleType };
+  };
+
+  const scaleInfo = getScaleInfo();
+
+  // Dynamic piano configuration based on scale and octaves
+  const getPianoRange = () => {
+    const selectedOctaves = parseInt(octaves);
+    
+    // Always start at C4 (MIDI 60)
+    const startingC = 60; // C4
+    
+    if (selectedOctaves === 1) {
+      // Show one octave + extra C: C4 to C5 (13 keys)
+      const firstNote = startingC; // C4
+      const lastNote = startingC + 12; // C5
+      return { 
+        first: MidiNumbers.fromNote(MidiNumbers.getAttributes(firstNote).note),
+        last: MidiNumbers.fromNote(MidiNumbers.getAttributes(lastNote).note)
+      };
+    } else {
+      // Show two octaves + extra C: C4 to C6 (25 keys)
+      const firstNote = startingC; // C4
+      const lastNote = startingC + 24; // C6
+      return { 
+        first: MidiNumbers.fromNote(MidiNumbers.getAttributes(firstNote).note),
+        last: MidiNumbers.fromNote(MidiNumbers.getAttributes(lastNote).note)
+      };
+    }
+  };
+
+  const { first: firstNote, last: lastNote } = getPianoRange();
+
+  // Piano configuration
+  const keyboardShortcuts = KeyboardShortcuts.create({
+    firstNote: firstNote,
+    lastNote: lastNote,
+    keyboardConfig: KeyboardShortcuts.HOME_ROW,
+  });
+
+  // Handle piano note play/stop
+  const onPlayNote = (midiNumber) => {
+    if (soundfontPlayer && audioContext) {
+      console.log('Manual note play:', midiNumber);
+      soundfontPlayer.play(midiNumber, audioContext.currentTime, { gain: 0.8 });
+    }
+  };
+
+  const onStopNote = (midiNumber) => {
+    // Soundfont player handles note stopping automatically
+  };
+
+  const handleBPMChange = (change) => {
+    const newBPM = Math.max(40, Math.min(200, currentBPM + change));
+    setCurrentBPM(newBPM);
+    
+    // Save the new BPM for this configuration
+    saveLastBPMForConfiguration(newBPM);
+    
+    // If metronome is active, restart it with new timing
+    if (isMetronomeMode && isPlayingRef.current) {
+      console.log('BPM changed during metronome, restarting with new timing');
+      // Use setTimeout to ensure currentBPM state has updated
+      setTimeout(() => {
+        restartMetronomeWithNewBPM();
+      }, 10);
+    }
+    
+    // Update best BPM if current exceeds it
+    if (bestBPM === null || newBPM > bestBPM) {
+      setBestBPM(newBPM);
     }
   };
 
@@ -1032,130 +1078,6 @@ export default function PracticePage() {
     }
   };
 
-  const handleBPMChange = (change) => {
-    const newBPM = Math.max(40, Math.min(200, currentBPM + change));
-    setCurrentBPM(newBPM);
-    
-    // Save the new BPM for this configuration
-    saveLastBPMForConfiguration(newBPM);
-    
-    // If metronome is active, restart it with new timing
-    if (isMetronomeMode && isPlayingRef.current) {
-      console.log('BPM changed during metronome, restarting with new timing');
-      // Use setTimeout to ensure currentBPM state has updated
-      setTimeout(() => {
-        restartMetronomeWithNewBPM();
-      }, 10);
-    }
-    
-    // Update best BPM if current exceeds it
-    if (bestBPM === null || newBPM > bestBPM) {
-      setBestBPM(newBPM);
-      // TODO: Save to user progress data
-    }
-  };
-
-  const formatTime = (seconds) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-
-  // Get scale information
-  const getScaleInfo = () => {
-    const [scaleName, scaleType] = scale.split(' ');
-    return { name: scaleName, type: scaleType };
-  };
-
-  const scaleInfo = getScaleInfo();
-
-  // Dynamic piano configuration based on scale and octaves
-  const getPianoRange = () => {
-    const selectedOctaves = parseInt(octaves);
-    
-    // Always start at C4 (MIDI 60)
-    const startingC = 60; // C4
-    
-    if (selectedOctaves === 1) {
-      // Show one octave + extra C: C4 to C5 (13 keys)
-      const firstNote = startingC; // C4
-      const lastNote = startingC + 12; // C5
-      return { 
-        first: MidiNumbers.fromNote(MidiNumbers.getAttributes(firstNote).note),
-        last: MidiNumbers.fromNote(MidiNumbers.getAttributes(lastNote).note)
-      };
-    } else {
-      // Show two octaves + extra C: C4 to C6 (25 keys)
-      const firstNote = startingC; // C4
-      const lastNote = startingC + 24; // C6
-      return { 
-        first: MidiNumbers.fromNote(MidiNumbers.getAttributes(firstNote).note),
-        last: MidiNumbers.fromNote(MidiNumbers.getAttributes(lastNote).note)
-      };
-    }
-  };
-
-  const { first: firstNote, last: lastNote } = getPianoRange();
-
-  // Piano configuration
-  const keyboardShortcuts = KeyboardShortcuts.create({
-    firstNote: firstNote,
-    lastNote: lastNote,
-    keyboardConfig: KeyboardShortcuts.HOME_ROW,
-  });
-
-  // Handle piano note play/stop
-  const onPlayNote = (midiNumber) => {
-    if (soundfontPlayer && audioContext) {
-      console.log('Manual note play:', midiNumber);
-      soundfontPlayer.play(midiNumber, audioContext.currentTime, { gain: 0.8 });
-    }
-  };
-
-  const onStopNote = (midiNumber) => {
-    // Soundfont player handles note stopping automatically
-  };
-
-  // Test audio function
-  const testAudio = async () => {
-    if (!soundfontPlayer || !audioContext) {
-      alert('Audio not ready yet');
-      return;
-    }
-
-    if (audioContext.state === 'suspended') {
-      await audioContext.resume();
-    }
-
-    console.log('Testing audio with middle C...');
-    soundfontPlayer.play(60, audioContext.currentTime, { duration: 1, gain: 0.8 });
-  };
-
-  // Test scale function
-  const testScale = async () => {
-    if (!soundfontPlayer || !audioContext) {
-      alert('Audio not ready yet');
-      return;
-    }
-
-    if (audioContext.state === 'suspended') {
-      await audioContext.resume();
-    }
-
-    const scaleMidi = getScaleMidiNumbers(scale, octaves);
-    
-    // Play all notes with 500ms delay between them
-    scaleMidi.forEach((midiNumber, index) => {
-      setTimeout(() => {
-        soundfontPlayer.play(midiNumber, audioContext.currentTime, { duration: 0.5, gain: 0.8 });
-        setActiveNotes([midiNumber]);
-        
-        // Clear highlight after note
-        setTimeout(() => setActiveNotes([]), 400);
-      }, index * 500);
-    });
-  };
-
   useEffect(() => {
     const updatePianoWidth = () => {
       // Calculate container width
@@ -1205,14 +1127,6 @@ export default function PracticePage() {
         <Card className="p-4 mb-4 bg-yellow-50 border-yellow-200">
           {audioLoading && <p className="text-yellow-800">Loading audio... Please wait.</p>}
           {audioError && <p className="text-red-800">Audio Error: {audioError}</p>}
-          <div className="flex gap-2 mt-2">
-            <Button onClick={testAudio} size="sm">
-              Test Audio
-            </Button>
-            <Button onClick={testScale} size="sm" variant="outline">
-              Test Scale
-            </Button>
-          </div>
         </Card>
       )}
 
@@ -1342,7 +1256,7 @@ export default function PracticePage() {
       <Card className="p-4 bg-cyan-100 text-center mb-6">
         <div className="flex items-center justify-center gap-2 mb-2">
           <Clock className="w-5 h-5 text-cyan-700" />
-          <span className="text-lg font-medium text-cyan-900">Today's Practice Time</span>
+          <span className="text-lg font-medium text-cyan-900">Today&apos;s Practice Time</span>
         </div>
         <div className="text-4xl font-bold text-cyan-900">
           {formatTime(dailyPracticeTime)}
@@ -1369,14 +1283,6 @@ export default function PracticePage() {
                   Start Listening
                 </>
               )}
-            </Button>
-            <Button
-              onClick={testAudioContext}
-              variant="outline"
-              size="sm"
-              className="w-full text-purple-600 border-purple-600 hover:bg-purple-50"
-            >
-              Test Audio Context (Chrome Debug)
             </Button>
           </div>
         </div>
@@ -1548,5 +1454,13 @@ export default function PracticePage() {
         }
       `}</style>
     </div>
+  );
+}
+
+export default function PracticePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center">Loading...</div>}>
+      <PracticePageContent />
+    </Suspense>
   );
 } 

@@ -1,7 +1,8 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Eye } from "lucide-react";
-import { SessionManager } from "@/data/scales";
+import { useState, useEffect } from "react";
+import { SessionManager } from "@/lib/sessionService";
 
 const getLevelColor = (level) => {
   switch (level) {
@@ -17,7 +18,24 @@ const getLevelColor = (level) => {
 };
 
 export default function ScaleCard({ scale, onClick }) {
-  const hasBeenPracticed = SessionManager.getPracticedExercisesForScale(scale.name).length > 0;
+  const [hasBeenPracticed, setHasBeenPracticed] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const checkPracticeHistory = async () => {
+      try {
+        const exercises = await SessionManager.getPracticedExercisesForScale(scale.name);
+        setHasBeenPracticed(exercises.length > 0);
+      } catch (error) {
+        console.error('Error checking practice history:', error);
+        setHasBeenPracticed(false);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkPracticeHistory();
+  }, [scale.name]);
   
   return (
     <Card 
@@ -26,10 +44,10 @@ export default function ScaleCard({ scale, onClick }) {
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {hasBeenPracticed && (
+          {!isLoading && hasBeenPracticed && (
             <Eye className="w-5 h-5 text-gray-600" />
           )}
-          {!hasBeenPracticed && (
+          {(!hasBeenPracticed || isLoading) && (
             <div className="w-5 h-5" /> // Placeholder to maintain spacing
           )}
           <span className="text-lg font-medium text-gray-900">{scale.name}</span>

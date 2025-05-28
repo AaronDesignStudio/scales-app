@@ -9,12 +9,13 @@ import ScaleCard from "@/components/scales/ScaleCard";
 import SessionCard from "@/components/scales/SessionCard";
 import ScalePracticeModal from "@/components/scales/ScalePracticeModal";
 import AllSessionsModal from "@/components/scales/AllSessionsModal";
-import { INITIAL_SCALES, SAMPLE_SESSIONS, SCALE_LAST_SESSIONS, USER_PROGRESS, SessionManager } from "@/data/scales";
+import { INITIAL_SCALES } from "@/data/scales";
+import { SessionManager } from "@/lib/sessionService";
 
 export default function Home() {
   const router = useRouter();
   
-  // Use real sessions from localStorage instead of sample data
+  // Use real sessions from SQLite database instead of localStorage
   const [recentSessions, setRecentSessions] = useState([]);
   const [selectedScale, setSelectedScale] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -26,14 +27,76 @@ export default function Home() {
 
   // Load real sessions on component mount
   useEffect(() => {
-    const loadSessions = () => {
+    const migrateLocalStorageData = async () => {
       try {
-        const realSessions = SessionManager.getRecentSessions();
+        // Check if there's localStorage data to migrate
+        const localSessions = localStorage.getItem('practiceSessionsHistory');
+        const localDailyPractice = localStorage.getItem('dailyPracticeData');
+        
+        if (localSessions || localDailyPractice) {
+          console.log('Found localStorage data, migrating to SQLite...');
+          
+          const migrationData = {};
+          
+          if (localSessions) {
+            try {
+              migrationData.sessions = JSON.parse(localSessions);
+            } catch (error) {
+              console.error('Error parsing localStorage sessions:', error);
+            }
+          }
+          
+          if (localDailyPractice) {
+            try {
+              migrationData.dailyPractice = JSON.parse(localDailyPractice);
+            } catch (error) {
+              console.error('Error parsing localStorage daily practice:', error);
+            }
+          }
+          
+          // Migrate to SQLite
+          const response = await fetch('/api/migrate', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(migrationData),
+          });
+          
+          const result = await response.json();
+          
+          if (result.success) {
+            console.log('Migration successful:', result.message);
+            
+            // Clear localStorage after successful migration
+            localStorage.removeItem('practiceSessionsHistory');
+            localStorage.removeItem('dailyPracticeData');
+            
+            console.log('Cleared localStorage data after migration');
+          } else {
+            console.error('Migration failed:', result.error);
+          }
+        }
+      } catch (error) {
+        console.error('Error during migration:', error);
+      }
+    };
+
+    const loadSessions = async () => {
+      try {
+        // Initialize database first
+        await fetch('/api/init');
+        
+        // First, try to migrate any localStorage data
+        await migrateLocalStorageData();
+        
+        // Then load sessions from SQLite
+        const realSessions = await SessionManager.getRecentSessions();
         setRecentSessions(realSessions);
       } catch (error) {
         console.error('Error loading sessions:', error);
-        // Fallback to sample sessions if there's an error
-        setRecentSessions(SAMPLE_SESSIONS);
+        // No fallback to dummy data - just use empty array
+        setRecentSessions([]);
       } finally {
         setIsLoading(false);
       }
@@ -43,17 +106,28 @@ export default function Home() {
 
     // Set up an interval to refresh sessions every 30 seconds
     // This ensures the home screen updates when returning from practice
-    const refreshInterval = setInterval(loadSessions, 30000);
+    const refreshInterval = setInterval(async () => {
+      try {
+        const realSessions = await SessionManager.getRecentSessions();
+        setRecentSessions(realSessions);
+      } catch (error) {
+        console.error('Error refreshing sessions:', error);
+      }
+    }, 30000);
 
     return () => clearInterval(refreshInterval);
   }, []);
 
   // Refresh sessions when the page becomes visible (user returns from practice)
   useEffect(() => {
-    const handleVisibilityChange = () => {
+    const handleVisibilityChange = async () => {
       if (!document.hidden) {
-        const realSessions = SessionManager.getRecentSessions();
-        setRecentSessions(realSessions);
+        try {
+          const realSessions = await SessionManager.getRecentSessions();
+          setRecentSessions(realSessions);
+        } catch (error) {
+          console.error('Error refreshing sessions:', error);
+        }
       }
     };
 
@@ -66,7 +140,7 @@ export default function Home() {
     console.log("Add scale clicked");
   };
 
-  const handleScaleClick = (scale) => {
+  const handleScaleClick = async (scale) => {
     setSelectedScale(scale);
     setIsModalOpen(true);
   };
@@ -91,7 +165,7 @@ export default function Home() {
     // Navigate to practice page with the session's configuration
     const params = new URLSearchParams({
       scale: session.scale,
-      type: session.practiceType || session.hand || session.pattern,
+      type: session.practice_type || session.practiceType || session.hand || session.pattern,
       octaves: session.octaves.toString()
     });
     
@@ -102,7 +176,7 @@ export default function Home() {
     // Navigate to practice page with the session's configuration
     const params = new URLSearchParams({
       scale: session.scale,
-      type: session.practiceType || session.hand || session.pattern,
+      type: session.practice_type || session.practiceType || session.hand || session.pattern,
       octaves: session.octaves.toString()
     });
     
@@ -114,9 +188,9 @@ export default function Home() {
     console.log("Start workout session");
   };
 
-  const handleViewAllSessions = () => {
+  const handleViewAllSessions = async () => {
     try {
-      const sessions = SessionManager.getLast20Sessions();
+      const sessions = await SessionManager.getLast20Sessions();
       setAllSessions(sessions);
       setShowAllSessionsModal(true);
     } catch (error) {
@@ -124,14 +198,14 @@ export default function Home() {
     }
   };
 
-  const getLastSessionsForScale = (scale) => {
-    // Use real session data instead of static data
+  const getLastSessionsForScale = async (scale) => {
+    // Use real session data from database only
     try {
-      return SessionManager.getLastSessionsForScale(scale.name);
+      return await SessionManager.getLastSessionsForScale(scale.name);
     } catch (error) {
       console.error('Error getting sessions for scale:', error);
-      // Fallback to static data if there's an error
-      return SCALE_LAST_SESSIONS[scale.name] || [];
+      // Return empty array instead of fallback to dummy data
+      return [];
     }
   };
 
@@ -182,7 +256,11 @@ export default function Home() {
             {recentSessions.slice(0, 3).map((session) => (
               <SessionCard 
                 key={session.id} 
-                session={session} 
+                session={{
+                  ...session,
+                  // Normalize field names for compatibility
+                  practiceType: session.practice_type || session.practiceType,
+                }} 
                 onStart={handleStartSession}
               />
             ))}
@@ -228,13 +306,11 @@ export default function Home() {
         </div>
       </Card>
 
-      {/* Scale Practice Modal with both views */}
+      {/* Scale Practice Modal */}
       <ScalePracticeModal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         scale={selectedScale}
-        lastSessions={selectedScale ? getLastSessionsForScale(selectedScale) : []}
-        userProgress={USER_PROGRESS}
         onSelectOctave={handleSelectOctave}
         onStartLastSession={handleStartLastSession}
       />
@@ -243,7 +319,11 @@ export default function Home() {
       <AllSessionsModal
         isOpen={showAllSessionsModal}
         onClose={() => setShowAllSessionsModal(false)}
-        sessions={allSessions}
+        sessions={allSessions.map(session => ({
+          ...session,
+          // Normalize field names for compatibility
+          practiceType: session.practice_type || session.practiceType,
+        }))}
         onStartSession={handleStartSession}
       />
     </div>

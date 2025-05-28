@@ -1,8 +1,8 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Eye, ChevronRight, ArrowLeft } from "lucide-react";
-import { useState } from "react";
-import { SessionManager } from "@/data/scales";
+import { useState, useEffect } from "react";
+import { SessionManager } from "@/lib/sessionService";
 
 const PRACTICE_TYPES = [
   { id: 'right-hand', name: 'Right Hand' },
@@ -23,15 +23,73 @@ export default function ScalePracticeModal({
   isOpen, 
   onClose, 
   scale, 
-  lastSessions = [],
-  userProgress = {},
   onSelectPracticeType,
   onSelectOctave,
   onStartLastSession 
 }) {
   const [currentView, setCurrentView] = useState('practice'); // 'practice' or 'octaves'
   const [selectedPracticeType, setSelectedPracticeType] = useState(null);
+  const [practicedExercises, setPracticedExercises] = useState(new Set());
+  const [bestBPMs, setBestBPMs] = useState({});
+  const [lastSessions, setLastSessions] = useState([]);
 
+  // Load practiced exercises and last sessions when scale changes
+  useEffect(() => {
+    const loadScaleData = async () => {
+      if (!scale) return;
+      
+      try {
+        // Load practiced exercises
+        const exercises = await SessionManager.getPracticedExercisesForScale(scale.name);
+        setPracticedExercises(new Set(exercises));
+
+        // Load last sessions for this scale
+        const sessions = await SessionManager.getLastSessionsForScale(scale.name, 2);
+        setLastSessions(sessions);
+      } catch (error) {
+        console.error('Error loading scale data:', error);
+        setPracticedExercises(new Set());
+        setLastSessions([]);
+      }
+    };
+
+    loadScaleData();
+  }, [scale]);
+
+  // Load best BPMs when practice type and scale change
+  useEffect(() => {
+    const loadBestBPMs = async () => {
+      if (!scale || !selectedPracticeType) return;
+      
+      try {
+        const bpmPromises = OCTAVE_OPTIONS.map(async (option) => {
+          const bestBPM = await SessionManager.getBestBPMForExercise(
+            scale.name, 
+            selectedPracticeType.name, 
+            option.octaves
+          );
+          return { octaves: option.octaves, bestBPM };
+        });
+        
+        const results = await Promise.all(bpmPromises);
+        const bpmMap = {};
+        results.forEach(({ octaves, bestBPM }) => {
+          if (bestBPM) {
+            bpmMap[octaves] = bestBPM;
+          }
+        });
+        
+        setBestBPMs(bpmMap);
+      } catch (error) {
+        console.error('Error loading best BPMs:', error);
+        setBestBPMs({});
+      }
+    };
+
+    loadBestBPMs();
+  }, [scale, selectedPracticeType]);
+
+  // Early return after all hooks
   if (!scale) return null;
 
   const handlePracticeTypeClick = (practiceType) => {
@@ -42,6 +100,7 @@ export default function ScalePracticeModal({
   const handleBackToPractice = () => {
     setCurrentView('practice');
     setSelectedPracticeType(null);
+    setBestBPMs({});
   };
 
   const handleOctaveClick = (octaveOption) => {
@@ -57,16 +116,12 @@ export default function ScalePracticeModal({
   const handleClose = () => {
     setCurrentView('practice');
     setSelectedPracticeType(null);
+    setBestBPMs({});
     onClose();
   };
 
   const getBestBPM = (octaves) => {
-    if (!selectedPracticeType) return null;
-    
-    // Debug: show what practice types are stored for this scale
-    SessionManager.debugPracticeTypesForScale(scale.name);
-    
-    return SessionManager.getBestBPMForExercise(scale.name, selectedPracticeType.name, octaves);
+    return bestBPMs[octaves] || null;
   };
 
   const getModalTitle = () => {
@@ -112,7 +167,7 @@ export default function ScalePracticeModal({
                 
                 <div className="space-y-3">
                   {PRACTICE_TYPES.map((practiceType) => {
-                    const hasBeenPracticed = SessionManager.hasExerciseBeenPracticed(scale.name, practiceType.name);
+                    const hasBeenPracticed = practicedExercises.has(practiceType.name);
                     
                     return (
                       <button
@@ -149,6 +204,7 @@ export default function ScalePracticeModal({
                       <div key={session.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200">
                         <div>
                           <p className="text-blue-600 font-medium text-sm">
+                            {session.practice_type && `${session.practice_type}, `}
                             {session.practiceType && `${session.practiceType}, `}
                             {session.hand && `${session.hand}, `}
                             {session.pattern && `${session.pattern}, `}
