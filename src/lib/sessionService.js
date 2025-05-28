@@ -1,31 +1,83 @@
 // Client-side service for session management using SQLite backend
 
 export const SessionManager = {
+  // Active requests map for cancellation
+  activeRequests: new Map(),
+
+  // Cancel a specific request type
+  cancelRequest: (requestType) => {
+    const controller = SessionManager.activeRequests.get(requestType);
+    if (controller) {
+      controller.abort();
+      SessionManager.activeRequests.delete(requestType);
+    }
+  },
+
+  // Cancel all active requests
+  cancelAllRequests: () => {
+    SessionManager.activeRequests.forEach((controller) => {
+      controller.abort();
+    });
+    SessionManager.activeRequests.clear();
+  },
+
+  // Helper function to make requests with timeout and cancellation
+  makeRequest: async (url, requestType, options = {}) => {
+    // Cancel any existing request of this type
+    SessionManager.cancelRequest(requestType);
+    
+    const controller = new AbortController();
+    SessionManager.activeRequests.set(requestType, controller);
+    
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+      SessionManager.activeRequests.delete(requestType);
+    }, options.timeout || 10000);
+    
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+        ...options,
+      });
+      
+      clearTimeout(timeoutId);
+      SessionManager.activeRequests.delete(requestType);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Request failed for ${requestType}: ${response.status} ${response.statusText}`, errorText);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      return response;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      SessionManager.activeRequests.delete(requestType);
+      
+      if (error.name === 'AbortError') {
+        console.log(`Request cancelled for ${requestType}`);
+        throw new Error('Request cancelled');
+      }
+      
+      throw error;
+    }
+  },
+
   // Save a new practice session
   saveSession: async (sessionData) => {
     try {
-      const response = await fetch('/api/sessions', {
+      const response = await SessionManager.makeRequest('/api/sessions', 'saveSession', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: 'save',
-          sessionData: {
-            ...sessionData,
-            timestamp: sessionData.timestamp || new Date().toISOString(),
-            date: sessionData.date || new Date().toDateString()
-          }
-        }),
+        body: JSON.stringify({ action: 'save', sessionData }),
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to save session');
-      }
 
       return await response.json();
     } catch (error) {
-      console.error('Error saving session:', error);
+      console.error('Error saving session:', error.message);
       return null;
     }
   },
@@ -33,28 +85,14 @@ export const SessionManager = {
   // Save a unique practice session (removes duplicates for same exercise)
   saveUniqueSession: async (sessionData) => {
     try {
-      const response = await fetch('/api/sessions', {
+      const response = await SessionManager.makeRequest('/api/sessions', 'saveUniqueSession', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: 'saveUnique',
-          sessionData: {
-            ...sessionData,
-            timestamp: sessionData.timestamp || new Date().toISOString(),
-            date: sessionData.date || new Date().toDateString()
-          }
-        }),
+        body: JSON.stringify({ action: 'saveUnique', sessionData }),
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to save unique session');
-      }
 
       return await response.json();
     } catch (error) {
-      console.error('Error saving unique session:', error);
+      console.error('Error saving unique session:', error.message);
       return null;
     }
   },
@@ -62,15 +100,10 @@ export const SessionManager = {
   // Get all sessions from database
   getAllSessions: async () => {
     try {
-      const response = await fetch('/api/sessions?action=all');
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch sessions');
-      }
-
+      const response = await SessionManager.makeRequest('/api/sessions?action=all', 'getAllSessions');
       return await response.json();
     } catch (error) {
-      console.error('Error loading sessions:', error);
+      console.error('Error loading sessions:', error.message);
       return [];
     }
   },
@@ -78,15 +111,22 @@ export const SessionManager = {
   // Get recent sessions (last 10)
   getRecentSessions: async (limit = 10) => {
     try {
-      const response = await fetch(`/api/sessions?action=recent&limit=${limit}`);
+      console.log(`Fetching recent sessions (limit: ${limit})`);
       
-      if (!response.ok) {
-        throw new Error('Failed to fetch recent sessions');
-      }
-
-      return await response.json();
+      const response = await SessionManager.makeRequest(
+        `/api/sessions?action=recent&limit=${limit}`, 
+        'getRecentSessions'
+      );
+      
+      const sessions = await response.json();
+      console.log(`Successfully fetched ${sessions.length} recent sessions`);
+      return sessions;
     } catch (error) {
-      console.error('Error loading recent sessions:', error);
+      if (error.message === 'Request cancelled') {
+        console.log('Recent sessions request was cancelled');
+        return [];
+      }
+      console.error('Error loading recent sessions:', error.message);
       return [];
     }
   },

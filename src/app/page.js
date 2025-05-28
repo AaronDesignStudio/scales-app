@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -25,80 +25,101 @@ export default function Home() {
   const [showAllSessionsModal, setShowAllSessionsModal] = useState(false);
   const [allSessions, setAllSessions] = useState([]);
 
-  // Load real sessions on component mount
+  // Add refs to track component state
+  const fetchingRef = useRef(false);
+  const refreshIntervalRef = useRef(null);
+  const isMountedRef = useRef(true);
+
   useEffect(() => {
+    isMountedRef.current = true;
+    
     const migrateLocalStorageData = async () => {
       try {
-        // Check if there's localStorage data to migrate
-        const localSessions = localStorage.getItem('practiceSessionsHistory');
-        const localDailyPractice = localStorage.getItem('dailyPracticeData');
-        
-        if (localSessions || localDailyPractice) {
-          console.log('Found localStorage data, migrating to SQLite...');
-          
-          const migrationData = {};
-          
-          if (localSessions) {
-            try {
-              migrationData.sessions = JSON.parse(localSessions);
-            } catch (error) {
-              console.error('Error parsing localStorage sessions:', error);
-            }
-          }
-          
-          if (localDailyPractice) {
-            try {
-              migrationData.dailyPractice = JSON.parse(localDailyPractice);
-            } catch (error) {
-              console.error('Error parsing localStorage daily practice:', error);
-            }
-          }
-          
-          // Migrate to SQLite
-          const response = await fetch('/api/migrate', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(migrationData),
-          });
-          
-          const result = await response.json();
-          
-          if (result.success) {
-            console.log('Migration successful:', result.message);
-            
-            // Clear localStorage after successful migration
-            localStorage.removeItem('practiceSessionsHistory');
-            localStorage.removeItem('dailyPracticeData');
-            
-            console.log('Cleared localStorage data after migration');
-          } else {
-            console.error('Migration failed:', result.error);
-          }
-        }
+        await fetch('/api/migrate', { method: 'POST' });
+        console.log('Migration completed successfully');
       } catch (error) {
         console.error('Error during migration:', error);
       }
     };
 
     const loadSessions = async () => {
+      // Check if component is still mounted
+      if (!isMountedRef.current) {
+        console.log('Component unmounted, skipping load...');
+        return;
+      }
+      
+      // Prevent multiple simultaneous fetch calls
+      if (fetchingRef.current) {
+        console.log('Fetch already in progress, skipping...');
+        return;
+      }
+      
+      fetchingRef.current = true;
+      
       try {
+        console.log('Loading sessions...');
+        
         // Initialize database first
         await fetch('/api/init');
         
         // First, try to migrate any localStorage data
         await migrateLocalStorageData();
         
+        // Check again if component is still mounted before setting state
+        if (!isMountedRef.current) {
+          console.log('Component unmounted during load, aborting...');
+          return;
+        }
+        
         // Then load sessions from SQLite
         const realSessions = await SessionManager.getRecentSessions();
-        setRecentSessions(realSessions);
+        console.log('Loaded sessions:', realSessions);
+        
+        // Only update state if component is still mounted
+        if (isMountedRef.current) {
+          setRecentSessions(realSessions);
+        }
       } catch (error) {
         console.error('Error loading sessions:', error);
-        // No fallback to dummy data - just use empty array
-        setRecentSessions([]);
+        // Only update state if component is still mounted
+        if (isMountedRef.current) {
+          setRecentSessions([]);
+        }
       } finally {
         setIsLoading(false);
+        fetchingRef.current = false;
+      }
+    };
+
+    // Create a reusable refresh function
+    const refreshSessions = async () => {
+      // Check if component is still mounted and document is visible
+      if (!isMountedRef.current || document.hidden) {
+        console.log('Component unmounted or document hidden, skipping refresh...');
+        return;
+      }
+      
+      // Only refresh if not currently fetching
+      if (fetchingRef.current) {
+        console.log('Fetch already in progress, skipping refresh...');
+        return;
+      }
+      
+      fetchingRef.current = true;
+      
+      try {
+        console.log('Refreshing sessions...');
+        const realSessions = await SessionManager.getRecentSessions();
+        
+        // Only update state if component is still mounted
+        if (isMountedRef.current) {
+          setRecentSessions(realSessions);
+        }
+      } catch (error) {
+        console.error('Error refreshing sessions:', error);
+      } finally {
+        fetchingRef.current = false;
       }
     };
 
@@ -106,33 +127,49 @@ export default function Home() {
 
     // Set up an interval to refresh sessions every 30 seconds
     // This ensures the home screen updates when returning from practice
-    const refreshInterval = setInterval(async () => {
-      try {
-        const realSessions = await SessionManager.getRecentSessions();
-        setRecentSessions(realSessions);
-      } catch (error) {
-        console.error('Error refreshing sessions:', error);
-      }
-    }, 30000);
+    refreshIntervalRef.current = setInterval(refreshSessions, 30000);
 
-    return () => clearInterval(refreshInterval);
+    return () => {
+      isMountedRef.current = false;
+      
+      // Cancel any pending session requests
+      SessionManager.cancelAllRequests();
+      
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+        refreshIntervalRef.current = null;
+      }
+    };
   }, []);
 
   // Refresh sessions when the page becomes visible (user returns from practice)
   useEffect(() => {
     const handleVisibilityChange = async () => {
-      if (!document.hidden) {
-        try {
-          const realSessions = await SessionManager.getRecentSessions();
+      // Only refresh if component is mounted, document is visible, and not already fetching
+      if (!isMountedRef.current || document.hidden || fetchingRef.current) {
+        return;
+      }
+      
+      try {
+        console.log('Page became visible, refreshing sessions...');
+        fetchingRef.current = true;
+        const realSessions = await SessionManager.getRecentSessions();
+        
+        // Only update state if component is still mounted
+        if (isMountedRef.current) {
           setRecentSessions(realSessions);
-        } catch (error) {
-          console.error('Error refreshing sessions:', error);
         }
+      } catch (error) {
+        console.error('Error refreshing sessions on visibility change:', error);
+      } finally {
+        fetchingRef.current = false;
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   const handleAddScale = () => {
