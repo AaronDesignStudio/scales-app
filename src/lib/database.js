@@ -18,8 +18,12 @@ export function initDatabase() {
 
     db = new Database(dbPath);
     
-    // Enable WAL mode for better performance
-    db.pragma('journal_mode = WAL');
+    // Use safer journal mode for development
+    try {
+      db.pragma('journal_mode = DELETE');
+    } catch (pragmaError) {
+      console.warn('Could not set journal mode, continuing with default:', pragmaError.message);
+    }
     
     // Create tables
     createTables();
@@ -28,6 +32,29 @@ export function initDatabase() {
     return db;
   } catch (error) {
     console.error('Failed to initialize database:', error);
+    
+    // If database is corrupted, try to remove it and recreate
+    if (error.code === 'SQLITE_IOERR_SHORT_READ' || error.code === 'SQLITE_CORRUPT') {
+      console.log('Database appears corrupted, attempting to recreate...');
+      try {
+        const fs = require('fs');
+        if (fs.existsSync(dbPath)) {
+          fs.unlinkSync(dbPath);
+          console.log('Removed corrupted database file');
+        }
+        
+        // Try to initialize again
+        db = new Database(dbPath);
+        db.pragma('journal_mode = DELETE');
+        createTables();
+        console.log('Database recreated successfully');
+        return db;
+      } catch (retryError) {
+        console.error('Failed to recreate database:', retryError);
+        throw retryError;
+      }
+    }
+    
     throw error;
   }
 }
@@ -98,7 +125,12 @@ function createTables() {
 // Get database instance
 export function getDatabase() {
   if (!db) {
-    initDatabase();
+    try {
+      initDatabase();
+    } catch (error) {
+      console.error('Failed to get database instance:', error);
+      throw error;
+    }
   }
   return db;
 }
