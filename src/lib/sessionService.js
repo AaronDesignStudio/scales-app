@@ -157,6 +157,87 @@ class SessionManagerClass {
       return [];
     }
   }
+
+  // Get practiced exercises for a specific scale - in static mode returns empty array
+  async getPracticedExercisesForScale(scaleName) {
+    try {
+      // In static environments, return empty array (no session history)
+      if (this.isStaticEnvironment()) {
+        return [];
+      }
+
+      console.log(`Fetching practiced exercises for scale: ${scaleName}`);
+      
+      // In development, try to fetch from API but return empty on failure
+      const response = await fetch(`/api/sessions?action=exercisesForScale&scale=${encodeURIComponent(scaleName)}`);
+      
+      if (response.ok) {
+        const exercises = await response.json();
+        console.log(`Successfully fetched ${exercises.length} exercises for ${scaleName}`);
+        return exercises;
+      }
+      
+      console.warn(`Failed to fetch exercises for scale: ${scaleName}`);
+      return [];
+    } catch (error) {
+      console.error(`Error loading exercises for scale ${scaleName}:`, error.message);
+      return [];
+    }
+  }
+
+  // Get last 20 sessions - in static mode returns empty array
+  async getLast20Sessions() {
+    try {
+      // In static environments, return empty array (no session history)
+      if (this.isStaticEnvironment()) {
+        return [];
+      }
+
+      console.log('Fetching last 20 sessions');
+      
+      // In development, try to fetch from API but return empty on failure
+      const response = await fetch('/api/sessions?action=recent&limit=20');
+      
+      if (response.ok) {
+        const sessions = await response.json();
+        console.log(`Successfully fetched ${sessions.length} sessions`);
+        return sessions;
+      }
+      
+      console.warn('Failed to fetch last 20 sessions');
+      return [];
+    } catch (error) {
+      console.error('Error loading last 20 sessions:', error.message);
+      return [];
+    }
+  }
+
+  // Get last sessions for a specific scale - in static mode returns empty array
+  async getLastSessionsForScale(scaleName) {
+    try {
+      // In static environments, return empty array (no session history)
+      if (this.isStaticEnvironment()) {
+        return [];
+      }
+
+      console.log(`Fetching last sessions for scale: ${scaleName}`);
+      
+      // In development, try to fetch from API but return empty on failure
+      const response = await fetch(`/api/sessions?action=forScale&scale=${encodeURIComponent(scaleName)}`);
+      
+      if (response.ok) {
+        const sessions = await response.json();
+        console.log(`Successfully fetched ${sessions.length} sessions for ${scaleName}`);
+        return sessions;
+      }
+      
+      console.warn(`Failed to fetch sessions for scale: ${scaleName}`);
+      return [];
+    } catch (error) {
+      console.error(`Error loading sessions for scale ${scaleName}:`, error.message);
+      return [];
+    }
+  }
 }
 
 export const SessionManager = new SessionManagerClass(); 
