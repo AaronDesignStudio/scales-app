@@ -1,363 +1,162 @@
-// Client-side service for session management using SQLite backend
+// Client-side service for session management with localStorage fallback
 
-export const SessionManager = {
-  // Active requests map for cancellation
-  activeRequests: new Map(),
+// SessionManager - Handles practice time tracking with localStorage fallback
+class SessionManagerClass {
+  constructor() {
+    this.dailyStorageKey = 'scales-daily-practice';
+    this.isDevelopment = process.env.NODE_ENV === 'development';
+    this.activeRequests = new Map();
+  }
+
+  // Helper to check if we're in a static environment (like GitHub Pages)
+  isStaticEnvironment() {
+    return typeof window !== 'undefined' && !this.isDevelopment;
+  }
+
+  // Get today's practice time
+  async getDailyPracticeTime() {
+    try {
+      // In static environments, use localStorage only
+      if (this.isStaticEnvironment()) {
+        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+        const dailyData = JSON.parse(localStorage.getItem(this.dailyStorageKey) || '{}');
+        return dailyData[today] || 0;
+      }
+
+      // Try API first in development
+      const response = await fetch('/api/daily-practice');
+      
+      if (response.ok) {
+        const data = await response.json();
+        return data.totalTime || 0;
+      }
+      
+      // Fallback to localStorage if API fails
+      console.warn('Daily practice API failed, falling back to localStorage');
+      const today = new Date().toISOString().split('T')[0];
+      const dailyData = JSON.parse(localStorage.getItem(this.dailyStorageKey) || '{}');
+      return dailyData[today] || 0;
+      
+    } catch (error) {
+      console.warn('Error getting daily practice time, using localStorage:', error);
+      const today = new Date().toISOString().split('T')[0];
+      const dailyData = JSON.parse(localStorage.getItem(this.dailyStorageKey) || '{}');
+      return dailyData[today] || 0;
+    }
+  }
+
+  // Add practice time to today's total
+  async addPracticeTime(seconds) {
+    try {
+      // In static environments, use localStorage only
+      if (this.isStaticEnvironment()) {
+        const today = new Date().toISOString().split('T')[0];
+        const dailyData = JSON.parse(localStorage.getItem(this.dailyStorageKey) || '{}');
+        
+        dailyData[today] = (dailyData[today] || 0) + seconds;
+        
+        // Clean up old entries (keep only last 7 days)
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const cutoffDate = sevenDaysAgo.toISOString().split('T')[0];
+        
+        Object.keys(dailyData).forEach(date => {
+          if (date < cutoffDate) {
+            delete dailyData[date];
+          }
+        });
+        
+        localStorage.setItem(this.dailyStorageKey, JSON.stringify(dailyData));
+        return dailyData[today];
+      }
+
+      // Try API first in development
+      const response = await fetch('/api/daily-practice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seconds }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.totalTime;
+      }
+      
+      // Fallback to localStorage if API fails
+      console.warn('Daily practice API failed, falling back to localStorage');
+      const today = new Date().toISOString().split('T')[0];
+      const dailyData = JSON.parse(localStorage.getItem(this.dailyStorageKey) || '{}');
+      
+      dailyData[today] = (dailyData[today] || 0) + seconds;
+      
+      // Clean up old entries
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const cutoffDate = sevenDaysAgo.toISOString().split('T')[0];
+      
+      Object.keys(dailyData).forEach(date => {
+        if (date < cutoffDate) {
+          delete dailyData[date];
+        }
+      });
+      
+      localStorage.setItem(this.dailyStorageKey, JSON.stringify(dailyData));
+      return dailyData[today];
+      
+    } catch (error) {
+      console.warn('Error adding practice time, using localStorage:', error);
+      const today = new Date().toISOString().split('T')[0];
+      const dailyData = JSON.parse(localStorage.getItem(this.dailyStorageKey) || '{}');
+      
+      dailyData[today] = (dailyData[today] || 0) + seconds;
+      localStorage.setItem(this.dailyStorageKey, JSON.stringify(dailyData));
+      return dailyData[today];
+    }
+  }
 
   // Cancel a specific request type
-  cancelRequest: (requestType) => {
-    const controller = SessionManager.activeRequests.get(requestType);
+  cancelRequest(requestType) {
+    const controller = this.activeRequests.get(requestType);
     if (controller) {
       controller.abort();
-      SessionManager.activeRequests.delete(requestType);
+      this.activeRequests.delete(requestType);
     }
-  },
+  }
 
   // Cancel all active requests
-  cancelAllRequests: () => {
-    SessionManager.activeRequests.forEach((controller) => {
+  cancelAllRequests() {
+    this.activeRequests.forEach((controller) => {
       controller.abort();
     });
-    SessionManager.activeRequests.clear();
-  },
+    this.activeRequests.clear();
+  }
 
-  // Helper function to make requests with timeout and cancellation
-  makeRequest: async (url, requestType, options = {}) => {
-    // Cancel any existing request of this type
-    SessionManager.cancelRequest(requestType);
-    
-    const controller = new AbortController();
-    SessionManager.activeRequests.set(requestType, controller);
-    
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-      SessionManager.activeRequests.delete(requestType);
-    }, options.timeout || 10000);
-    
+  // Get recent sessions (last 10) - in static mode returns empty array
+  async getRecentSessions(limit = 10) {
     try {
-      const response = await fetch(url, {
-        signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
-        ...options,
-      });
-      
-      clearTimeout(timeoutId);
-      SessionManager.activeRequests.delete(requestType);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Request failed for ${requestType}: ${response.status} ${response.statusText}`, errorText);
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      return response;
-    } catch (error) {
-      clearTimeout(timeoutId);
-      SessionManager.activeRequests.delete(requestType);
-      
-      if (error.name === 'AbortError') {
-        console.log(`Request cancelled for ${requestType}`);
-        throw new Error('Request cancelled');
-      }
-      
-      throw error;
-    }
-  },
-
-  // Save a new practice session
-  saveSession: async (sessionData) => {
-    try {
-      const response = await SessionManager.makeRequest('/api/sessions', 'saveSession', {
-        method: 'POST',
-        body: JSON.stringify({ action: 'save', sessionData }),
-      });
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error saving session:', error.message);
-      return null;
-    }
-  },
-
-  // Save a unique practice session (removes duplicates for same exercise)
-  saveUniqueSession: async (sessionData) => {
-    try {
-      const response = await SessionManager.makeRequest('/api/sessions', 'saveUniqueSession', {
-        method: 'POST',
-        body: JSON.stringify({ action: 'saveUnique', sessionData }),
-      });
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error saving unique session:', error.message);
-      return null;
-    }
-  },
-
-  // Get all sessions from database
-  getAllSessions: async () => {
-    try {
-      const response = await SessionManager.makeRequest('/api/sessions?action=all', 'getAllSessions');
-      return await response.json();
-    } catch (error) {
-      console.error('Error loading sessions:', error.message);
-      return [];
-    }
-  },
-
-  // Get recent sessions (last 10)
-  getRecentSessions: async (limit = 10) => {
-    try {
-      console.log(`Fetching recent sessions (limit: ${limit})`);
-      
-      const response = await SessionManager.makeRequest(
-        `/api/sessions?action=recent&limit=${limit}`, 
-        'getRecentSessions'
-      );
-      
-      const sessions = await response.json();
-      console.log(`Successfully fetched ${sessions.length} recent sessions`);
-      return sessions;
-    } catch (error) {
-      if (error.message === 'Request cancelled') {
-        console.log('Recent sessions request was cancelled');
+      // In static environments, return empty array (no session history)
+      if (this.isStaticEnvironment()) {
         return [];
       }
+
+      console.log(`Fetching recent sessions (limit: ${limit})`);
+      
+      // In development, try to fetch from API but return empty on failure
+      const response = await fetch(`/api/sessions?action=recent&limit=${limit}`);
+      
+      if (response.ok) {
+        const sessions = await response.json();
+        console.log(`Successfully fetched ${sessions.length} recent sessions`);
+        return sessions;
+      }
+      
+      console.warn('Failed to fetch recent sessions');
+      return [];
+    } catch (error) {
       console.error('Error loading recent sessions:', error.message);
       return [];
     }
-  },
-
-  // Get last 20 sessions for "View All" modal
-  getLast20Sessions: async () => {
-    try {
-      const response = await fetch('/api/sessions?action=recent&limit=20');
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch sessions');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error loading sessions:', error);
-      return [];
-    }
-  },
-
-  // Get sessions for a specific scale
-  getSessionsForScale: async (scaleName) => {
-    try {
-      const response = await fetch(`/api/sessions?action=forScale&scale=${encodeURIComponent(scaleName)}`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch scale sessions');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error loading scale sessions:', error);
-      return [];
-    }
-  },
-
-  // Get last 2 sessions for a specific scale (for modal display)
-  getLastSessionsForScale: async (scaleName, limit = 2) => {
-    try {
-      const response = await fetch(`/api/sessions?action=lastForScale&scale=${encodeURIComponent(scaleName)}&limit=${limit}`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch last scale sessions');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error loading last scale sessions:', error);
-      return [];
-    }
-  },
-
-  // Clear all sessions (for testing/reset)
-  clearAllSessions: async () => {
-    try {
-      const response = await fetch('/api/sessions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ action: 'clear' }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to clear sessions');
-      }
-
-      console.log('All sessions cleared');
-      return true;
-    } catch (error) {
-      console.error('Error clearing sessions:', error);
-      return false;
-    }
-  },
-
-  // Get practice stats
-  getPracticeStats: async () => {
-    try {
-      const response = await fetch('/api/sessions?action=stats');
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch practice stats');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error loading practice stats:', error);
-      return {
-        totalSessions: 0,
-        todaySessions: 0,
-        totalPracticeTime: 0,
-        favoriteScale: null
-      };
-    }
-  },
-
-  // Check if a specific exercise has been practiced before
-  hasExerciseBeenPracticed: async (scale, practiceType) => {
-    try {
-      const response = await fetch(`/api/sessions/exercise?action=hasBeenPracticed&scale=${encodeURIComponent(scale)}&practiceType=${encodeURIComponent(practiceType)}`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to check exercise');
-      }
-
-      const result = await response.json();
-      return result.practiced;
-    } catch (error) {
-      console.error('Error checking exercise history:', error);
-      return false;
-    }
-  },
-
-  // Get all practiced exercise combinations for a specific scale
-  getPracticedExercisesForScale: async (scale) => {
-    try {
-      const response = await fetch(`/api/sessions/exercise?action=practicedForScale&scale=${encodeURIComponent(scale)}`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch practiced exercises');
-      }
-
-      const result = await response.json();
-      return result.exercises;
-    } catch (error) {
-      console.error('Error getting practiced exercises:', error);
-      return [];
-    }
-  },
-
-  // Get the best (highest) BPM for a specific exercise configuration
-  getBestBPMForExercise: async (scale, practiceType, octaves) => {
-    try {
-      const response = await fetch(`/api/sessions/exercise?action=bestBPM&scale=${encodeURIComponent(scale)}&practiceType=${encodeURIComponent(practiceType)}&octaves=${octaves}`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch best BPM');
-      }
-
-      const result = await response.json();
-      return result.bestBPM;
-    } catch (error) {
-      console.error('Error getting best BPM:', error);
-      return null;
-    }
-  },
-
-  // Debug function to see what practice types are stored for a scale
-  debugPracticeTypesForScale: async (scale) => {
-    try {
-      const response = await fetch(`/api/sessions/exercise?action=debug&scale=${encodeURIComponent(scale)}`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to debug practice types');
-      }
-
-      const result = await response.json();
-      console.log(`Practice types stored for ${scale}:`, result.debugInfo);
-      return result.debugInfo;
-    } catch (error) {
-      console.error('Error debugging practice types:', error);
-      return [];
-    }
   }
-};
+}
 
-// Daily Practice Time Management
-export const DailyPracticeManager = {
-  // Get daily practice data
-  getDailyPracticeData: async (date = null) => {
-    try {
-      const targetDate = date || new Date().toDateString();
-      const response = await fetch(`/api/daily-practice?date=${encodeURIComponent(targetDate)}`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch daily practice data');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error loading daily practice data:', error);
-      return null;
-    }
-  },
-
-  // Save daily practice data
-  saveDailyPracticeData: async (practiceData) => {
-    try {
-      const response = await fetch('/api/daily-practice', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          action: 'save',
-          practiceData
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to save daily practice data');
-      }
-
-      const result = await response.json();
-      return result.success;
-    } catch (error) {
-      console.error('Error saving daily practice data:', error);
-      return false;
-    }
-  },
-
-  // Clear daily practice data
-  clearDailyPracticeData: async () => {
-    try {
-      const response = await fetch('/api/daily-practice', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ action: 'clear' }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to clear daily practice data');
-      }
-
-      console.log('Daily practice data cleared');
-      return true;
-    } catch (error) {
-      console.error('Error clearing daily practice data:', error);
-      return false;
-    }
-  }
-}; 
+export const SessionManager = new SessionManagerClass(); 

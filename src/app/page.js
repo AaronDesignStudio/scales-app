@@ -202,18 +202,26 @@ export default function Home() {
 
   const handleAddScaleToCollection = async (scale) => {
     try {
-      console.log('handleAddScaleToCollection called with:', scale);
+      console.log('Adding scale to collection:', scale);
+      
       const addedScale = await ScalesManager.addScale(scale);
+      
       if (addedScale) {
-        // Refresh user scales
-        const updatedScales = await ScalesManager.getUserScales();
+        // Update local state
+        const updatedScales = [...userScales, addedScale];
         setUserScales(updatedScales);
         console.log('Scale added successfully:', addedScale);
       }
     } catch (error) {
       console.error('Error adding scale:', error);
-      // Display error to user (you might want to add a toast notification here)
-      alert(`Failed to add scale: ${error.message}`);
+      
+      // More informative error message for production/static environments
+      const isStatic = typeof window !== 'undefined' && process.env.NODE_ENV !== 'development';
+      if (isStatic) {
+        alert('Scale saved to your browser! Note: In the hosted version, your scales are stored locally and won\'t sync across devices.');
+      } else {
+        alert(`Failed to add scale: ${error.message}`);
+      }
     }
   };
 
