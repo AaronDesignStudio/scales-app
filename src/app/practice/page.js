@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ArrowLeft, Play, Pause, Clock, Mic, MicOff } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Piano, KeyboardShortcuts, MidiNumbers } from 'react-piano';
@@ -10,6 +12,31 @@ import 'react-piano/dist/styles.css';
 import Soundfont from 'soundfont-player';
 import * as Tone from 'tone';
 import { USER_PROGRESS } from "@/data/scales";
+
+// Available options for modals
+const AVAILABLE_SCALES = [
+  { name: 'C Major', difficulty: 'Easy' },
+  { name: 'G Major', difficulty: 'Easy' },
+  { name: 'D Major', difficulty: 'Intermediate' },
+  { name: 'A Minor', difficulty: 'Easy' },
+  { name: 'E Minor', difficulty: 'Intermediate' },
+  { name: 'F Major', difficulty: 'Advanced' }
+];
+
+const PRACTICE_TYPES = [
+  'Right Hand',
+  'Left Hand', 
+  'Two Hands',
+  'Contrary Motion',
+  'Staccato'
+];
+
+const OCTAVE_OPTIONS = [
+  { value: '1', label: '1 Octave' },
+  { value: '2', label: '2 Octaves' },
+  { value: '3', label: '3 Octaves' },
+  { value: '4', label: '4 Octaves' }
+];
 
 export default function PracticePage() {
   const router = useRouter();
@@ -21,7 +48,7 @@ export default function PracticePage() {
   const octaves = searchParams.get('octaves') || '1';
   
   // Practice state
-  const [currentBPM, setCurrentBPM] = useState(80);
+  const [currentBPM, setCurrentBPM] = useState(60); // Default to 60 BPM
   const [isPlaying, setIsPlaying] = useState(false);
   const [dailyPracticeTime, setDailyPracticeTime] = useState(0);
   
@@ -45,9 +72,46 @@ export default function PracticePage() {
   const pitchDetectionRef = useRef(null);
   const isListeningRef = useRef(false);
   
+  // Modal states for changing practice settings
+  const [showScaleModal, setShowScaleModal] = useState(false);
+  const [showTypeModal, setShowTypeModal] = useState(false);
+  const [showOctavesModal, setShowOctavesModal] = useState(false);
+  
   // Timer for practice session
   const [sessionStartTime, setSessionStartTime] = useState(null);
   
+  // Piano width state for responsive design
+  const [pianoWidth, setPianoWidth] = useState(400);
+  
+  // Client-side mounting state to prevent hydration mismatches
+  const [isMounted, setIsMounted] = useState(false);
+
+  // Suppress hydration warnings caused by browser extensions
+  useEffect(() => {
+    // Mark component as mounted on client side
+    setIsMounted(true);
+    
+    // Suppress console errors for known hydration mismatches from browser extensions
+    const originalError = console.error;
+    console.error = (...args) => {
+      const message = args[0];
+      if (
+        typeof message === 'string' && 
+        (message.includes('data-darkreader') || 
+         message.includes('hydration') ||
+         message.includes('server rendered HTML'))
+      ) {
+        // Suppress DarkReader and other extension-related hydration warnings
+        return;
+      }
+      originalError.apply(console, args);
+    };
+
+    return () => {
+      console.error = originalError;
+    };
+  }, []);
+
   // Get best BPM for this specific configuration
   const getBestBPMForConfiguration = () => {
     const practiceTypeId = practiceType.toLowerCase().replace(/\s+/g, '-');
@@ -55,7 +119,34 @@ export default function PracticePage() {
     return USER_PROGRESS[progressKey]?.bestBPM || null;
   };
 
+  // Get/Set last used BPM for this configuration
+  const getLastBPMForConfiguration = () => {
+    const practiceTypeId = practiceType.toLowerCase().replace(/\s+/g, '-');
+    const configKey = `bpm-${scale}-${practiceTypeId}-${octaves}`;
+    const savedBPM = localStorage.getItem(configKey);
+    return savedBPM ? parseInt(savedBPM) : 60; // Default to 60 if never practiced
+  };
+
+  const saveLastBPMForConfiguration = (bpm) => {
+    const practiceTypeId = practiceType.toLowerCase().replace(/\s+/g, '-');
+    const configKey = `bpm-${scale}-${practiceTypeId}-${octaves}`;
+    localStorage.setItem(configKey, bpm.toString());
+    console.log(`Saved BPM ${bpm} for configuration: ${configKey}`);
+  };
+
   const [bestBPM, setBestBPM] = useState(getBestBPMForConfiguration());
+
+  // Load last used BPM when configuration changes
+  useEffect(() => {
+    const lastBPM = getLastBPMForConfiguration();
+    console.log(`Loading BPM for ${scale} - ${practiceType} - ${octaves} octaves: ${lastBPM}`);
+    setCurrentBPM(lastBPM);
+  }, [scale, practiceType, octaves]); // Re-run when any config changes
+
+  // Update best BPM when it changes
+  useEffect(() => {
+    setBestBPM(getBestBPMForConfiguration());
+  }, [scale, practiceType, octaves]);
 
   // Initialize audio context and soundfont
   useEffect(() => {
@@ -126,38 +217,103 @@ export default function PracticePage() {
 
   // Load daily practice time from localStorage on component mount
   useEffect(() => {
-    const today = new Date().toDateString();
-    const savedData = localStorage.getItem('dailyPracticeData');
-    
-    if (savedData) {
-      const practiceData = JSON.parse(savedData);
-      if (practiceData.date === today) {
-        setDailyPracticeTime(practiceData.time);
+    const loadDailyPracticeTime = () => {
+      const now = new Date();
+      const today = now.toDateString();
+      const savedData = localStorage.getItem('dailyPracticeData');
+      
+      if (savedData) {
+        try {
+          const practiceData = JSON.parse(savedData);
+          
+          if (practiceData.date === today) {
+            // Same day - continue from saved time
+            console.log('Continuing practice time from:', practiceData.time, 'seconds');
+            setDailyPracticeTime(practiceData.time);
+          } else {
+            // New day - reset to 0 and save
+            console.log('New day detected, resetting practice time');
+            setDailyPracticeTime(0);
+            localStorage.setItem('dailyPracticeData', JSON.stringify({
+              date: today,
+              time: 0,
+              lastUpdated: now.toISOString()
+            }));
+          }
+        } catch (error) {
+          console.error('Error parsing practice data:', error);
+          // Reset if corrupted
+          setDailyPracticeTime(0);
+          localStorage.setItem('dailyPracticeData', JSON.stringify({
+            date: today,
+            time: 0,
+            lastUpdated: now.toISOString()
+          }));
+        }
       } else {
-        // New day, reset to 0
+        // First time - start from 0
+        console.log('First time using app, starting practice time at 0');
         setDailyPracticeTime(0);
         localStorage.setItem('dailyPracticeData', JSON.stringify({
           date: today,
-          time: 0
+          time: 0,
+          lastUpdated: now.toISOString()
         }));
       }
-    } else {
-      // First time, start from 0
-      localStorage.setItem('dailyPracticeData', JSON.stringify({
-        date: today,
-        time: 0
-      }));
-    }
+    };
+
+    loadDailyPracticeTime();
   }, []);
 
   // Save daily practice time to localStorage when it changes
   useEffect(() => {
-    const today = new Date().toDateString();
-    localStorage.setItem('dailyPracticeData', JSON.stringify({
-      date: today,
-      time: dailyPracticeTime
-    }));
+    if (dailyPracticeTime > 0) { // Only save if there's actual practice time
+      const now = new Date();
+      const today = now.toDateString();
+      
+      const practiceData = {
+        date: today,
+        time: dailyPracticeTime,
+        lastUpdated: now.toISOString()
+      };
+      
+      localStorage.setItem('dailyPracticeData', JSON.stringify(practiceData));
+      console.log('Saved practice time:', dailyPracticeTime, 'seconds');
+    }
   }, [dailyPracticeTime]);
+
+  // Check for date change every minute to handle midnight rollover
+  useEffect(() => {
+    const checkDateChange = () => {
+      const now = new Date();
+      const today = now.toDateString();
+      const savedData = localStorage.getItem('dailyPracticeData');
+      
+      if (savedData) {
+        try {
+          const practiceData = JSON.parse(savedData);
+          
+          if (practiceData.date !== today) {
+            // Date has changed (midnight passed) - reset to 0
+            console.log('Midnight passed, resetting practice time to 0');
+            setDailyPracticeTime(0);
+            localStorage.setItem('dailyPracticeData', JSON.stringify({
+              date: today,
+              time: 0,
+              lastUpdated: now.toISOString()
+            }));
+          }
+        } catch (error) {
+          console.error('Error checking date change:', error);
+        }
+      }
+    };
+
+    // Check every minute for date changes
+    const dateCheckInterval = setInterval(checkDateChange, 60000);
+    
+    return () => clearInterval(dateCheckInterval);
+  }, []);
 
   const handleGoBack = () => {
     router.push('/');
@@ -294,6 +450,40 @@ export default function PracticePage() {
     metronomeRef.current = setTimeout(playMetronomeBeat, beatInterval);
   };
 
+  // Restart metronome with new BPM (for real-time BPM changes)
+  const restartMetronomeWithNewBPM = () => {
+    if (!isMetronomeMode || !isPlayingRef.current) return;
+    
+    console.log('Restarting metronome with new BPM:', currentBPM);
+    
+    // Clear existing metronome timeout
+    if (metronomeRef.current) {
+      clearTimeout(metronomeRef.current);
+      metronomeRef.current = null;
+    }
+    
+    // Start metronome again with new timing
+    const bpm = currentBPM;
+    const beatInterval = (60 / bpm) * 1000;
+    
+    // Play immediate click to maintain rhythm
+    playMetronomeClick();
+    
+    const playMetronomeBeat = () => {
+      if (isPlayingRef.current) {
+        playMetronomeClick();
+        metronomeRef.current = setTimeout(playMetronomeBeat, beatInterval);
+      } else {
+        console.log('Metronome stopped');
+        setIsMetronomeMode(false);
+        metronomeRef.current = null;
+      }
+    };
+
+    // Schedule next beat with new timing
+    metronomeRef.current = setTimeout(playMetronomeBeat, beatInterval);
+  };
+
   // Convert frequency to note name
   const frequencyToNote = (frequency) => {
     if (!frequency || frequency < 80 || frequency > 2000) return null;
@@ -314,29 +504,47 @@ export default function PracticePage() {
   const startPitchDetection = async () => {
     try {
       console.log('Starting pitch detection...');
+      console.log('Browser:', navigator.userAgent);
+      
+      // Chrome requires audio context to be resumed after user gesture
+      if (audioContext && audioContext.state === 'suspended') {
+        console.log('Resuming suspended audio context...');
+        await audioContext.resume();
+      }
       
       // Use native Web Audio API for more reliable microphone access
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           echoCancellation: false,
           noiseSuppression: false,
-          autoGainControl: false
+          autoGainControl: false,
+          sampleRate: 44100,  // Explicit sample rate for Chrome
+          channelCount: 1     // Mono input for better performance
         } 
       });
       
       console.log('Microphone stream obtained:', stream);
+      console.log('Stream tracks:', stream.getTracks());
       
-      // Create audio context if not exists
-      if (!audioContext) {
+      // For Chrome, we need to ensure we have a fresh audio context
+      let contextToUse = audioContext;
+      if (!contextToUse || contextToUse.state === 'closed') {
+        console.log('Creating new audio context for Chrome...');
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        const newAudioContext = new AudioContextClass();
-        setAudioContext(newAudioContext);
-        
-        // Use the new context for analysis
-        setupAnalysis(stream, newAudioContext);
-      } else {
-        setupAnalysis(stream, audioContext);
+        contextToUse = new AudioContextClass({ sampleRate: 44100 });
+        setAudioContext(contextToUse);
       }
+      
+      // Ensure context is running before proceeding
+      if (contextToUse.state === 'suspended') {
+        console.log('Resuming audio context before analysis...');
+        await contextToUse.resume();
+      }
+      
+      console.log('Audio context state:', contextToUse.state);
+      console.log('Audio context sample rate:', contextToUse.sampleRate);
+      
+      setupAnalysis(stream, contextToUse);
       
     } catch (error) {
       console.error('Error starting pitch detection:', error);
@@ -347,26 +555,42 @@ export default function PracticePage() {
 
   const setupAnalysis = (stream, context) => {
     try {
+      console.log('Setting up audio analysis...');
+      console.log('Context state before setup:', context.state);
+      
       // Create audio nodes
       const source = context.createMediaStreamSource(stream);
       const analyser = context.createAnalyser();
       
-      // Configure analyser
+      // Configure analyser with Chrome-friendly settings
       analyser.fftSize = 2048;
-      analyser.smoothingTimeConstant = 0.3;
+      analyser.smoothingTimeConstant = 0.8;  // More smoothing for Chrome
+      analyser.minDecibels = -90;
+      analyser.maxDecibels = -10;
+      
+      console.log('Analyser configured:', {
+        fftSize: analyser.fftSize,
+        smoothingTimeConstant: analyser.smoothingTimeConstant,
+        minDecibels: analyser.minDecibels,
+        maxDecibels: analyser.maxDecibels
+      });
       
       // Connect source to analyser
       source.connect(analyser);
+      console.log('Audio nodes connected');
       
-      // Store references
-      micRef.current = { stream, source, analyser };
-      
-      setIsListening(true);
-      isListeningRef.current = true;
-      console.log('Audio analysis setup complete');
-      
-      // Start analysis loop
-      analyzeAudio(analyser, context);
+      // For Chrome, add a small delay before starting analysis
+      setTimeout(() => {
+        // Store references
+        micRef.current = { stream, source, analyser, context };
+        
+        setIsListening(true);
+        isListeningRef.current = true;
+        console.log('Audio analysis setup complete, starting analysis...');
+        
+        // Start analysis loop
+        analyzeAudio(analyser, context);
+      }, 100); // 100ms delay for Chrome stability
       
     } catch (error) {
       console.error('Error setting up audio analysis:', error);
@@ -494,10 +718,7 @@ export default function PracticePage() {
     if (micRef.current) {
       // Stop the media stream tracks
       if (micRef.current.stream) {
-        micRef.current.stream.getTracks().forEach(track => {
-          track.stop();
-          console.log('Stopped audio track:', track);
-        });
+        micRef.current.stream.getTracks().forEach(track => track.stop());
       }
       
       // Disconnect audio nodes
@@ -515,6 +736,43 @@ export default function PracticePage() {
       stopPitchDetection();
     } else {
       startPitchDetection();
+    }
+  };
+
+  // Test audio context for Chrome debugging
+  const testAudioContext = async () => {
+    try {
+      console.log('=== TESTING AUDIO CONTEXT ===');
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      const testContext = new AudioContextClass();
+      
+      console.log('Test context created:', testContext.state);
+      console.log('Test context sample rate:', testContext.sampleRate);
+      
+      if (testContext.state === 'suspended') {
+        console.log('Resuming test context...');
+        await testContext.resume();
+        console.log('Test context after resume:', testContext.state);
+      }
+      
+      // Test oscillator
+      const oscillator = testContext.createOscillator();
+      const gainNode = testContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(testContext.destination);
+      
+      oscillator.frequency.value = 440;
+      gainNode.gain.value = 0.1;
+      
+      oscillator.start();
+      oscillator.stop(testContext.currentTime + 0.2);
+      
+      console.log('Audio context test completed');
+      testContext.close();
+      
+    } catch (error) {
+      console.error('Audio context test failed:', error);
     }
   };
 
@@ -644,6 +902,18 @@ export default function PracticePage() {
     const newBPM = Math.max(40, Math.min(200, currentBPM + change));
     setCurrentBPM(newBPM);
     
+    // Save the new BPM for this configuration
+    saveLastBPMForConfiguration(newBPM);
+    
+    // If metronome is active, restart it with new timing
+    if (isMetronomeMode && isPlayingRef.current) {
+      console.log('BPM changed during metronome, restarting with new timing');
+      // Use setTimeout to ensure currentBPM state has updated
+      setTimeout(() => {
+        restartMetronomeWithNewBPM();
+      }, 10);
+    }
+    
     // Update best BPM if current exceeds it
     if (bestBPM === null || newBPM > bestBPM) {
       setBestBPM(newBPM);
@@ -665,9 +935,35 @@ export default function PracticePage() {
 
   const scaleInfo = getScaleInfo();
 
+  // Dynamic piano configuration based on scale and octaves
+  const getPianoRange = () => {
+    const selectedOctaves = parseInt(octaves);
+    
+    // Always start at C4 (MIDI 60)
+    const startingC = 60; // C4
+    
+    if (selectedOctaves === 1) {
+      // Show one octave + extra C: C4 to C5 (13 keys)
+      const firstNote = startingC; // C4
+      const lastNote = startingC + 12; // C5
+      return { 
+        first: MidiNumbers.fromNote(MidiNumbers.getAttributes(firstNote).note),
+        last: MidiNumbers.fromNote(MidiNumbers.getAttributes(lastNote).note)
+      };
+    } else {
+      // Show two octaves + extra C: C4 to C6 (25 keys)
+      const firstNote = startingC; // C4
+      const lastNote = startingC + 24; // C6
+      return { 
+        first: MidiNumbers.fromNote(MidiNumbers.getAttributes(firstNote).note),
+        last: MidiNumbers.fromNote(MidiNumbers.getAttributes(lastNote).note)
+      };
+    }
+  };
+
+  const { first: firstNote, last: lastNote } = getPianoRange();
+
   // Piano configuration
-  const firstNote = MidiNumbers.fromNote('c3');
-  const lastNote = MidiNumbers.fromNote('c6');
   const keyboardShortcuts = KeyboardShortcuts.create({
     firstNote: firstNote,
     lastNote: lastNote,
@@ -729,6 +1025,36 @@ export default function PracticePage() {
     });
   };
 
+  useEffect(() => {
+    const updatePianoWidth = () => {
+      // Calculate container width
+      const containerWidth = Math.min(window.innerWidth - 32, 448);
+      
+      // Use a very conservative width to ensure all keys (including the extra one) fit
+      const pianoWidth = containerWidth - 32; // Leave 32px margin to prevent overflow
+      
+      setPianoWidth(pianoWidth);
+    };
+
+    // Set initial width
+    updatePianoWidth();
+
+    // Update on resize
+    window.addEventListener('resize', updatePianoWidth);
+    return () => window.removeEventListener('resize', updatePianoWidth);
+  }, [octaves]);
+
+  // Prevent hydration mismatches by only rendering after client-side mount
+  if (!isMounted) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-4 max-w-md mx-auto">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-lg text-gray-600">Loading...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-4 max-w-md mx-auto">
       {/* Back Button */}
@@ -768,6 +1094,7 @@ export default function PracticePage() {
             variant="ghost" 
             size="sm" 
             className="mt-2 text-xs text-gray-500 hover:text-gray-700"
+            onClick={() => setShowScaleModal(true)}
           >
             change
           </Button>
@@ -779,6 +1106,7 @@ export default function PracticePage() {
             variant="ghost" 
             size="sm" 
             className="mt-2 text-xs text-gray-500 hover:text-gray-700"
+            onClick={() => setShowTypeModal(true)}
           >
             change
           </Button>
@@ -792,6 +1120,7 @@ export default function PracticePage() {
             variant="ghost" 
             size="sm" 
             className="mt-2 text-xs text-gray-500 hover:text-gray-700"
+            onClick={() => setShowOctavesModal(true)}
           >
             change
           </Button>
@@ -799,19 +1128,16 @@ export default function PracticePage() {
       </div>
 
       {/* React Piano Component */}
-      <Card className="p-4 mb-6 bg-white">
-        <div className="piano-container">
-          <Piano
-            noteRange={{ first: firstNote, last: lastNote }}
-            playNote={onPlayNote}
-            stopNote={onStopNote}
-            width={300}
-            keyboardShortcuts={keyboardShortcuts}
-            activeNotes={activeNotes}
-            className="react-piano"
-          />
-        </div>
-      </Card>
+      <Piano
+        noteRange={{ first: firstNote, last: lastNote }}
+        playNote={onPlayNote}
+        stopNote={onStopNote}
+        width={pianoWidth}
+        keyboardShortcuts={keyboardShortcuts}
+        activeNotes={activeNotes}
+        renderNoteLabel={() => null}
+        className="react-piano mx-auto mb-6"
+      />
 
       {/* BPM Control Section */}
       <Card className="p-6 mb-6 bg-white">
@@ -834,7 +1160,6 @@ export default function PracticePage() {
             size="lg"
             onClick={() => handleBPMChange(-5)}
             className="w-16 h-16 text-xl font-bold"
-            disabled={isPlaying}
           >
             -5
           </Button>
@@ -843,7 +1168,6 @@ export default function PracticePage() {
             size="lg"
             onClick={() => handleBPMChange(-1)}
             className="w-16 h-16 text-xl font-bold"
-            disabled={isPlaying}
           >
             -1
           </Button>
@@ -859,7 +1183,6 @@ export default function PracticePage() {
             size="lg"
             onClick={() => handleBPMChange(1)}
             className="w-16 h-16 text-xl font-bold"
-            disabled={isPlaying}
           >
             +1
           </Button>
@@ -868,7 +1191,6 @@ export default function PracticePage() {
             size="lg"
             onClick={() => handleBPMChange(5)}
             className="w-16 h-16 text-xl font-bold"
-            disabled={isPlaying}
           >
             +5
           </Button>
@@ -900,22 +1222,32 @@ export default function PracticePage() {
       <Card className="p-6 bg-purple-50 border-purple-200">
         <div className="text-center mb-4">
           <h3 className="text-lg font-semibold text-purple-900 mb-2">Piano Note Detection</h3>
-          <Button
-            onClick={togglePitchDetection}
-            className={`w-full ${isListening ? 'bg-red-500 hover:bg-red-600' : 'bg-purple-600 hover:bg-purple-700'} text-white`}
-          >
-            {isListening ? (
-              <>
-                <MicOff className="w-5 h-5 mr-2" />
-                Stop Listening
-              </>
-            ) : (
-              <>
-                <Mic className="w-5 h-5 mr-2" />
-                Start Listening
-              </>
-            )}
-          </Button>
+          <div className="space-y-2">
+            <Button
+              onClick={togglePitchDetection}
+              className={`w-full ${isListening ? 'bg-red-500 hover:bg-red-600' : 'bg-purple-600 hover:bg-purple-700'} text-white`}
+            >
+              {isListening ? (
+                <>
+                  <MicOff className="w-5 h-5 mr-2" />
+                  Stop Listening
+                </>
+              ) : (
+                <>
+                  <Mic className="w-5 h-5 mr-2" />
+                  Start Listening
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={testAudioContext}
+              variant="outline"
+              size="sm"
+              className="w-full text-purple-600 border-purple-600 hover:bg-purple-50"
+            >
+              Test Audio Context (Chrome Debug)
+            </Button>
+          </div>
         </div>
 
         {isListening && (
@@ -956,10 +1288,124 @@ export default function PracticePage() {
         )}
       </Card>
 
+      {/* Scale Selection Modal */}
+      <Dialog open={showScaleModal} onOpenChange={setShowScaleModal}>
+        <DialogContent className="max-w-md mx-auto">
+          <DialogHeader>
+            <DialogTitle>Select Scale</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 mt-4">
+            {AVAILABLE_SCALES.map((scaleOption) => (
+              <div
+                key={scaleOption.name}
+                className={`p-4 rounded-lg border cursor-pointer transition-colors ${
+                  scale === scaleOption.name 
+                    ? 'bg-blue-50 border-blue-200' 
+                    : 'bg-white border-gray-200 hover:bg-gray-50'
+                }`}
+                onClick={() => {
+                  const searchParams = new URLSearchParams(window.location.search);
+                  searchParams.set('scale', scaleOption.name);
+                  window.location.search = searchParams.toString();
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold text-gray-900">{scaleOption.name}</div>
+                    <Badge 
+                      variant="outline"
+                      className={`mt-1 ${
+                        scaleOption.difficulty === 'Easy' ? 'border-green-500 text-green-700' :
+                        scaleOption.difficulty === 'Intermediate' ? 'border-yellow-500 text-yellow-700' :
+                        'border-red-500 text-red-700'
+                      }`}
+                    >
+                      {scaleOption.difficulty}
+                    </Badge>
+                  </div>
+                  {scale === scaleOption.name && (
+                    <div className="w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center">
+                      <div className="w-2 h-2 bg-white rounded-full"></div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Practice Type Modal */}
+      <Dialog open={showTypeModal} onOpenChange={setShowTypeModal}>
+        <DialogContent className="max-w-md mx-auto">
+          <DialogHeader>
+            <DialogTitle>Select Practice Type</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 mt-4">
+            {PRACTICE_TYPES.map((typeOption) => (
+              <div
+                key={typeOption}
+                className={`p-4 rounded-lg border cursor-pointer transition-colors ${
+                  practiceType === typeOption 
+                    ? 'bg-blue-50 border-blue-200' 
+                    : 'bg-white border-gray-200 hover:bg-gray-50'
+                }`}
+                onClick={() => {
+                  const searchParams = new URLSearchParams(window.location.search);
+                  searchParams.set('type', typeOption);
+                  window.location.search = searchParams.toString();
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold text-gray-900">{typeOption}</div>
+                  {practiceType === typeOption && (
+                    <div className="w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center">
+                      <div className="w-2 h-2 bg-white rounded-full"></div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Octaves Modal */}
+      <Dialog open={showOctavesModal} onOpenChange={setShowOctavesModal}>
+        <DialogContent className="max-w-md mx-auto">
+          <DialogHeader>
+            <DialogTitle>Select Octaves</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 mt-4">
+            {OCTAVE_OPTIONS.map((octaveOption) => (
+              <div
+                key={octaveOption.value}
+                className={`p-4 rounded-lg border cursor-pointer transition-colors ${
+                  octaves === octaveOption.value 
+                    ? 'bg-blue-50 border-blue-200' 
+                    : 'bg-white border-gray-200 hover:bg-gray-50'
+                }`}
+                onClick={() => {
+                  const searchParams = new URLSearchParams(window.location.search);
+                  searchParams.set('octaves', octaveOption.value);
+                  window.location.search = searchParams.toString();
+                }}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold text-gray-900">{octaveOption.label}</div>
+                  {octaves === octaveOption.value && (
+                    <div className="w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center">
+                      <div className="w-2 h-2 bg-white rounded-full"></div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <style jsx>{`
-        .piano-container {
-          overflow-x: auto;
-        }
         .react-piano {
           margin: 0 auto;
         }
