@@ -10,16 +10,9 @@ const AddScaleModal = ({ isOpen, onClose, userScales, onAddScale }) => {
   const [activeTab, setActiveTab] = useState('major');
   const [selectedScales, setSelectedScales] = useState([]);
 
-  // Debug logging
-  console.log('AddScaleModal - MAJOR_SCALES:', MAJOR_SCALES);
-  console.log('AddScaleModal - MINOR_SCALES:', MINOR_SCALES);
-  console.log('AddScaleModal - userScales:', userScales);
-  console.log('AddScaleModal - isOpen:', isOpen);
-
   if (!isOpen) return null;
 
   const currentScales = activeTab === 'major' ? MAJOR_SCALES : MINOR_SCALES;
-  console.log('AddScaleModal - currentScales for tab', activeTab, ':', currentScales);
 
   const handleScaleToggle = (scale) => {
     if (isScaleInCollection(scale.name, userScales)) {
@@ -110,17 +103,9 @@ const AddScaleModal = ({ isOpen, onClose, userScales, onAddScale }) => {
         {/* Scales Grid */}
         <div className="flex-1 overflow-y-auto p-4 min-h-0">
           <div className="grid grid-cols-1 gap-3">
-            {currentScales.length === 0 && (
-              <div className="text-center py-8">
-                <p className="text-muted-foreground">No scales available</p>
-                <p className="text-xs text-muted-foreground mt-2">Debug: currentScales length = {currentScales.length}</p>
-              </div>
-            )}
             {currentScales.map((scale, index) => {
               const isInCollection = isScaleInCollection(scale.name, userScales);
               const isSelected = selectedScales.some(s => s.name === scale.name);
-              
-              console.log('Rendering scale:', scale.name, 'isInCollection:', isInCollection, 'isSelected:', isSelected);
               
               return (
                 <Card

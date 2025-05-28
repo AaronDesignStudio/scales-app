@@ -445,11 +445,22 @@ export const ScalesDB = {
   // Add a scale to user's collection
   addScale: (scale) => {
     try {
+      console.log('ScalesDB.addScale called with:', scale);
+      
+      if (!scale || !scale.name) {
+        console.error('Invalid scale data provided:', scale);
+        throw new Error('Scale must have a name');
+      }
+      
       const db = getDatabase();
+      console.log('Database instance obtained successfully');
+      
       const stmt = db.prepare(`
         INSERT OR IGNORE INTO user_scales (name, level, sharps, flats)
         VALUES (?, ?, ?, ?)
       `);
+      
+      console.log('Prepared statement created successfully');
       
       const result = stmt.run(
         scale.name,
@@ -458,15 +469,23 @@ export const ScalesDB = {
         scale.flats || 0
       );
       
+      console.log('Insert statement executed, result:', result);
+      
       if (result.changes > 0) {
-        return { id: result.lastInsertRowid, ...scale };
+        const addedScale = { id: result.lastInsertRowid, ...scale };
+        console.log('Scale added successfully:', addedScale);
+        return addedScale;
       } else {
-        // Scale already exists
+        console.log('Scale already exists in collection:', scale.name);
         return null;
       }
     } catch (error) {
-      console.error('Error adding scale:', error);
-      return null;
+      console.error('Error adding scale - Details:', {
+        error: error.message,
+        stack: error.stack,
+        scaleData: scale
+      });
+      throw error; // Re-throw to propagate the error
     }
   },
 

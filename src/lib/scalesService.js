@@ -20,6 +20,8 @@ export const ScalesManager = {
   // Add a scale to user's collection
   addScale: async (scale) => {
     try {
+      console.log('ScalesManager.addScale called with:', scale);
+      
       const response = await fetch('/api/scales', {
         method: 'POST',
         headers: {
@@ -36,14 +38,24 @@ export const ScalesManager = {
         }),
       });
 
+      console.log('API response status:', response.status);
+      
       if (!response.ok) {
-        throw new Error('Failed to add scale');
+        const errorData = await response.json();
+        console.error('API error response:', errorData);
+        throw new Error(`Failed to add scale: ${errorData.error || 'Unknown error'} (Status: ${response.status})`);
       }
 
-      return await response.json();
+      const result = await response.json();
+      console.log('Scale added successfully:', result);
+      return result;
     } catch (error) {
-      console.error('Error adding scale:', error);
-      return null;
+      console.error('Error in ScalesManager.addScale:', {
+        error: error.message,
+        stack: error.stack,
+        scaleData: scale
+      });
+      throw error; // Re-throw to let the calling code handle it
     }
   },
 

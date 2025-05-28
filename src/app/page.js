@@ -202,6 +202,7 @@ export default function Home() {
 
   const handleAddScaleToCollection = async (scale) => {
     try {
+      console.log('handleAddScaleToCollection called with:', scale);
       const addedScale = await ScalesManager.addScale(scale);
       if (addedScale) {
         // Refresh user scales
@@ -211,6 +212,8 @@ export default function Home() {
       }
     } catch (error) {
       console.error('Error adding scale:', error);
+      // Display error to user (you might want to add a toast notification here)
+      alert(`Failed to add scale: ${error.message}`);
     }
   };
 

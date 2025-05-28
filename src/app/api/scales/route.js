@@ -30,15 +30,29 @@ export async function POST(request) {
 
     switch (action) {
       case 'addScale':
+        console.log('API addScale called with:', { scale });
+        
         if (!scale || !scale.name) {
+          console.error('Missing scale data:', { scale });
           return NextResponse.json({ error: 'Scale data required' }, { status: 400 });
         }
         
-        const addedScale = ScalesDB.addScale(scale);
-        if (addedScale) {
-          return NextResponse.json(addedScale);
-        } else {
-          return NextResponse.json({ error: 'Scale already exists or failed to add' }, { status: 409 });
+        try {
+          const addedScale = ScalesDB.addScale(scale);
+          console.log('ScalesDB.addScale result:', addedScale);
+          
+          if (addedScale) {
+            return NextResponse.json(addedScale);
+          } else {
+            console.log('Scale already exists:', scale.name);
+            return NextResponse.json({ error: 'Scale already exists or failed to add' }, { status: 409 });
+          }
+        } catch (dbError) {
+          console.error('Database error in addScale:', dbError);
+          return NextResponse.json({ 
+            error: 'Database error occurred', 
+            details: dbError.message 
+          }, { status: 500 });
         }
       
       case 'removeScale':
