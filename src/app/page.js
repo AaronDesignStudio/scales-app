@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -8,16 +8,54 @@ import { Plus } from "lucide-react";
 import ScaleCard from "@/components/scales/ScaleCard";
 import SessionCard from "@/components/scales/SessionCard";
 import ScalePracticeModal from "@/components/scales/ScalePracticeModal";
-import { INITIAL_SCALES, SAMPLE_SESSIONS, SCALE_LAST_SESSIONS, USER_PROGRESS } from "@/data/scales";
+import { INITIAL_SCALES, SAMPLE_SESSIONS, SCALE_LAST_SESSIONS, USER_PROGRESS, SessionManager } from "@/data/scales";
 
 export default function Home() {
   const router = useRouter();
   
-  // For demo purposes, we show sample sessions. In a real app, this would be empty for new users
-  const [recentSessions, setRecentSessions] = useState(SAMPLE_SESSIONS);
+  // Use real sessions from localStorage instead of sample data
+  const [recentSessions, setRecentSessions] = useState([]);
   const [selectedScale, setSelectedScale] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load real sessions on component mount
+  useEffect(() => {
+    const loadSessions = () => {
+      try {
+        const realSessions = SessionManager.getRecentSessions();
+        setRecentSessions(realSessions);
+      } catch (error) {
+        console.error('Error loading sessions:', error);
+        // Fallback to sample sessions if there's an error
+        setRecentSessions(SAMPLE_SESSIONS);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadSessions();
+
+    // Set up an interval to refresh sessions every 30 seconds
+    // This ensures the home screen updates when returning from practice
+    const refreshInterval = setInterval(loadSessions, 30000);
+
+    return () => clearInterval(refreshInterval);
+  }, []);
+
+  // Refresh sessions when the page becomes visible (user returns from practice)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        const realSessions = SessionManager.getRecentSessions();
+        setRecentSessions(realSessions);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
   const handleAddScale = () => {
     // TODO: Implement add scale functionality
     console.log("Add scale clicked");
@@ -65,7 +103,14 @@ export default function Home() {
   };
 
   const getLastSessionsForScale = (scale) => {
-    return SCALE_LAST_SESSIONS[scale.name] || [];
+    // Use real session data instead of static data
+    try {
+      return SessionManager.getLastSessionsForScale(scale.name);
+    } catch (error) {
+      console.error('Error getting sessions for scale:', error);
+      // Fallback to static data if there's an error
+      return SCALE_LAST_SESSIONS[scale.name] || [];
+    }
   };
 
   return (
@@ -73,13 +118,15 @@ export default function Home() {
       {/* Header - Fixed */}
       <div className="flex items-center justify-between mb-6 pt-4 flex-shrink-0">
         <h1 className="text-2xl font-bold text-gray-900">My Scales</h1>
-        <Button 
-          onClick={handleAddScale}
-          className="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6 py-2"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Scale
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button 
+            onClick={handleAddScale}
+            className="bg-blue-600 hover:bg-blue-700 text-white rounded-full px-6 py-2"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Scale
+          </Button>
+        </div>
       </div>
 
       {/* Scales List - Scrollable */}
@@ -96,7 +143,7 @@ export default function Home() {
       </div>
 
       {/* Recent Sessions - Fixed at bottom */}
-      {recentSessions.length > 0 && (
+      {!isLoading && recentSessions.length > 0 && (
         <div className="mb-6 flex-shrink-0">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-gray-900">Recent Sessions</h2>
@@ -118,6 +165,30 @@ export default function Home() {
               />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Empty state for new users */}
+      {!isLoading && recentSessions.length === 0 && (
+        <div className="mb-6 flex-shrink-0">
+          <Card className="p-6 text-center bg-gray-50 border-dashed border-2 border-gray-300">
+            <div className="text-gray-500">
+              <div className="text-lg font-medium mb-2">No practice sessions yet</div>
+              <div className="text-sm">Start practicing scales to see your recent sessions here!</div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Loading state */}
+      {isLoading && (
+        <div className="mb-6 flex-shrink-0">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900">Recent Sessions</h2>
+          </div>
+          <Card className="p-6 text-center">
+            <div className="text-gray-500">Loading sessions...</div>
+          </Card>
         </div>
       )}
 

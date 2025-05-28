@@ -43,4 +43,129 @@ export const SCALE_LEVELS = {
   EASY: "Easy",
   INTERMEDIATE: "Intermediate", 
   ADVANCED: "Advanced"
+};
+
+// Real session management functions
+export const SessionManager = {
+  // Save a new practice session
+  saveSession: (sessionData) => {
+    try {
+      const sessions = SessionManager.getAllSessions();
+      const newSession = {
+        id: Date.now(), // Use timestamp as unique ID
+        ...sessionData,
+        timestamp: new Date().toISOString(),
+        date: new Date().toDateString()
+      };
+      
+      sessions.unshift(newSession); // Add to beginning of array
+      
+      // Keep only the last 50 sessions to prevent localStorage bloat
+      const trimmedSessions = sessions.slice(0, 50);
+      
+      localStorage.setItem('practiceSessionsHistory', JSON.stringify(trimmedSessions));
+      
+      return newSession;
+    } catch (error) {
+      console.error('Error saving session:', error);
+      return null;
+    }
+  },
+
+  // Save a unique practice session (removes duplicates for same exercise)
+  saveUniqueSession: (sessionData) => {
+    try {
+      // Remove any existing session with the same configuration
+      SessionManager.removeDuplicateSession(sessionData.scale, sessionData.practiceType, sessionData.octaves);
+      
+      // Now save the new session
+      return SessionManager.saveSession(sessionData);
+    } catch (error) {
+      console.error('Error saving unique session:', error);
+      return null;
+    }
+  },
+
+  // Remove duplicate sessions for the same exercise configuration
+  removeDuplicateSession: (scale, practiceType, octaves) => {
+    try {
+      const sessions = SessionManager.getAllSessions();
+      const filteredSessions = sessions.filter(session => {
+        return !(session.scale === scale && 
+                 session.practiceType === practiceType && 
+                 session.octaves === octaves);
+      });
+      
+      localStorage.setItem('practiceSessionsHistory', JSON.stringify(filteredSessions));
+    } catch (error) {
+      console.error('Error removing duplicate session:', error);
+    }
+  },
+
+  // Get all sessions from localStorage
+  getAllSessions: () => {
+    try {
+      const stored = localStorage.getItem('practiceSessionsHistory');
+      return stored ? JSON.parse(stored) : [];
+    } catch (error) {
+      console.error('Error loading sessions:', error);
+      return [];
+    }
+  },
+
+  // Get recent sessions (last 10)
+  getRecentSessions: () => {
+    const sessions = SessionManager.getAllSessions();
+    return sessions.slice(0, 10);
+  },
+
+  // Get sessions for a specific scale
+  getSessionsForScale: (scaleName) => {
+    const sessions = SessionManager.getAllSessions();
+    return sessions.filter(session => session.scale === scaleName);
+  },
+
+  // Get last 2 sessions for a specific scale (for modal display)
+  getLastSessionsForScale: (scaleName) => {
+    const sessions = SessionManager.getSessionsForScale(scaleName);
+    return sessions.slice(0, 2);
+  },
+
+  // Clear all sessions (for testing/reset)
+  clearAllSessions: () => {
+    localStorage.removeItem('practiceSessionsHistory');
+    console.log('All sessions cleared');
+  },
+
+  // Get practice stats
+  getPracticeStats: () => {
+    const sessions = SessionManager.getAllSessions();
+    const today = new Date().toDateString();
+    
+    return {
+      totalSessions: sessions.length,
+      todaySessions: sessions.filter(s => s.date === today).length,
+      totalPracticeTime: sessions.reduce((total, session) => total + (session.duration || 0), 0),
+      favoriteScale: SessionManager.getMostPracticedScale(sessions)
+    };
+  },
+
+  // Helper to get most practiced scale
+  getMostPracticedScale: (sessions) => {
+    const scaleCount = {};
+    sessions.forEach(session => {
+      scaleCount[session.scale] = (scaleCount[session.scale] || 0) + 1;
+    });
+    
+    let mostPracticed = null;
+    let maxCount = 0;
+    Object.entries(scaleCount).forEach(([scale, count]) => {
+      if (count > maxCount) {
+        maxCount = count;
+        mostPracticed = scale;
+      }
+    });
+    
+    return mostPracticed;
+  }
 }; 

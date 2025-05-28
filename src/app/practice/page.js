@@ -11,7 +11,7 @@ import { Piano, KeyboardShortcuts, MidiNumbers } from 'react-piano';
 import 'react-piano/dist/styles.css';
 import Soundfont from 'soundfont-player';
 import * as Tone from 'tone';
-import { USER_PROGRESS } from "@/data/scales";
+import { USER_PROGRESS, SessionManager } from "@/data/scales";
 
 // Available options for modals
 const AVAILABLE_SCALES = [
@@ -86,6 +86,12 @@ export default function PracticePage() {
   // Client-side mounting state to prevent hydration mismatches
   const [isMounted, setIsMounted] = useState(false);
 
+  // Session tracking state
+  const [currentSessionData, setCurrentSessionData] = useState(null);
+
+  // Flag to prevent config changes from interfering during practice
+  const [isInActivePractice, setIsInActivePractice] = useState(false);
+
   // Suppress hydration warnings caused by browser extensions
   useEffect(() => {
     // Mark component as mounted on client side
@@ -147,6 +153,43 @@ export default function PracticePage() {
   useEffect(() => {
     setBestBPM(getBestBPMForConfiguration());
   }, [scale, practiceType, octaves]);
+
+  // Reset session when configuration changes
+  useEffect(() => {
+    // Skip on initial mount - only run when configuration actually changes
+    if (!isMounted) return;
+    
+    // Don't interfere during active practice sessions
+    if (isInActivePractice) {
+      return;
+    }
+    
+    // If there's an active session and configuration changed, save it first
+    if (currentSessionData && currentSessionData.hasActuallyPracticed) {
+      saveCurrentSession();
+    } else if (currentSessionData) {
+      // Just clear the session data if user didn't actually practice
+      setCurrentSessionData(null);
+    }
+    
+    // Stop any active playback when configuration changes
+    if (isPlaying) {
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+      setIsMetronomeMode(false);
+      setActiveNotes([]);
+      
+      if (scalePlaybackRef.current) {
+        clearTimeout(scalePlaybackRef.current);
+        scalePlaybackRef.current = null;
+      }
+      
+      if (metronomeRef.current) {
+        clearTimeout(metronomeRef.current);
+        metronomeRef.current = null;
+      }
+    }
+  }, [scale, practiceType, octaves, isMounted, isInActivePractice]);
 
   // Initialize audio context and soundfont
   useEffect(() => {
@@ -315,8 +358,100 @@ export default function PracticePage() {
     return () => clearInterval(dateCheckInterval);
   }, []);
 
+  // Save session on component unmount or navigation
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (currentSessionData) {
+        saveCurrentSession();
+      }
+    };
+
+    // Save session when navigating away
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    // Cleanup function to save session when component unmounts
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (currentSessionData) {
+        saveCurrentSession();
+      }
+    };
+  }, [currentSessionData]);
+
   const handleGoBack = () => {
     router.push('/');
+  };
+
+  // Session management functions
+  const saveCurrentSession = () => {
+    if (!currentSessionData || !currentSessionData.hasActuallyPracticed) {
+      return;
+    }
+
+    const sessionDuration = Math.floor((Date.now() - currentSessionData.startTime) / 1000);
+    
+    // Only save sessions that lasted at least 10 seconds
+    if (sessionDuration < 10) {
+      return;
+    }
+
+    const sessionToSave = {
+      scale: scale,
+      practiceType: practiceType,
+      octaves: parseInt(octaves),
+      bpm: currentBPM,
+      duration: sessionDuration,
+      completed: currentSessionData.completed || false
+    };
+
+    // Use the new saveUniqueSession method to handle duplicates
+    const savedSession = SessionManager.saveUniqueSession(sessionToSave);
+    
+    // Clear current session data after a small delay to ensure save completes
+    setTimeout(() => {
+      setCurrentSessionData(null);
+    }, 100);
+  };
+
+  const startNewSession = () => {
+    const sessionData = {
+      startTime: Date.now(),
+      scale: scale,
+      practiceType: practiceType,
+      octaves: parseInt(octaves),
+      bpm: currentBPM,
+      completed: false,
+      hasActuallyPracticed: false // Flag to track if user actually practiced
+    };
+    
+    setCurrentSessionData(sessionData);
+  };
+
+  const markSessionAsActuallyPracticed = () => {
+    if (currentSessionData) {
+      setCurrentSessionData(prev => ({
+        ...prev, 
+        hasActuallyPracticed: true 
+      }));
+    } else {
+      // If no session data exists, create one and mark it as practiced
+      const newSessionData = {
+        startTime: Date.now(),
+        scale: scale,
+        practiceType: practiceType,
+        octaves: parseInt(octaves),
+        bpm: currentBPM,
+        completed: false,
+        hasActuallyPracticed: true // Mark as practiced immediately
+      };
+      setCurrentSessionData(newSessionData);
+    }
+  };
+
+  const completeCurrentSession = () => {
+    if (currentSessionData) {
+      setCurrentSessionData(prev => ({ ...prev, completed: true }));
+    }
   };
 
   // Get scale MIDI numbers
@@ -352,7 +487,11 @@ export default function PracticePage() {
       });
     }
 
-    console.log(`Generated MIDI numbers for ${scale} (${octaves} octaves):`, midiNumbers);
+    // Add the extra octave note (return to root) at the end
+    const finalOctaveNote = rootNote + (parseInt(octaves) * 12);
+    midiNumbers.push(finalOctaveNote);
+
+    console.log(`Generated MIDI numbers for ${scale} (${octaves} octaves + extra note):`, midiNumbers);
     return midiNumbers;
   };
 
@@ -853,45 +992,49 @@ export default function PracticePage() {
   };
 
   const handlePlayPause = async () => {
-    console.log('=== PLAY/PAUSE BUTTON CLICKED ===');
-    console.log('Current state - isPlaying:', isPlaying, 'isPlayingRef.current:', isPlayingRef.current);
-    console.log('Audio ready - soundfontPlayer:', !!soundfontPlayer, 'audioContext:', !!audioContext);
-    
     if (!soundfontPlayer || !audioContext) {
-      console.error('Audio not ready yet');
       alert('Audio is still loading. Please wait a moment and try again.');
       return;
     }
 
     if (!isPlaying) {
-      console.log('=== STARTING PLAYBACK ===');
       setSessionStartTime(Date.now());
       setIsPlaying(true);
       isPlayingRef.current = true;
-      console.log('isPlaying set to true, isPlayingRef.current set to true');
+      setIsInActivePractice(true); // Mark as in active practice
+      
+      // Always ensure we have a session and mark it as practiced
+      if (!currentSessionData) {
+        startNewSession();
+      }
+      
+      // Mark as practiced (this will handle both new and existing sessions)
+      setTimeout(() => {
+        markSessionAsActuallyPracticed();
+      }, 100); // Small delay to ensure session is created
       
       // Wait a tick for state to update before calling playScale
       setTimeout(async () => {
-        console.log('About to call playScale, isPlaying:', isPlaying, 'isPlayingRef.current:', isPlayingRef.current);
         await playScale();
       }, 10);
     } else {
-      console.log('=== STOPPING PLAYBACK ===');
       setIsPlaying(false);
       isPlayingRef.current = false;
       setIsMetronomeMode(false);
       setActiveNotes([]);
+      setIsInActivePractice(false); // Mark as no longer in active practice
+      
+      // Save current practice session
+      saveCurrentSession();
       
       // Clear scale playback timeout
       if (scalePlaybackRef.current) {
-        console.log('Clearing scale timeout:', scalePlaybackRef.current);
         clearTimeout(scalePlaybackRef.current);
         scalePlaybackRef.current = null;
       }
       
       // Clear metronome timeout
       if (metronomeRef.current) {
-        console.log('Clearing metronome timeout:', metronomeRef.current);
         clearTimeout(metronomeRef.current);
         metronomeRef.current = null;
       }
@@ -1008,14 +1151,11 @@ export default function PracticePage() {
       await audioContext.resume();
     }
 
-    console.log('Testing scale notes...');
     const scaleMidi = getScaleMidiNumbers(scale, octaves);
-    console.log('Generated scale MIDI numbers:', scaleMidi);
     
     // Play all notes with 500ms delay between them
     scaleMidi.forEach((midiNumber, index) => {
       setTimeout(() => {
-        console.log(`Testing note ${index + 1}: MIDI ${midiNumber}`);
         soundfontPlayer.play(midiNumber, audioContext.currentTime, { duration: 0.5, gain: 0.8 });
         setActiveNotes([midiNumber]);
         
