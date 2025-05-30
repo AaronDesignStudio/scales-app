@@ -8,9 +8,19 @@ class SessionManagerClass {
     this.activeRequests = new Map();
   }
 
-  // Helper to check if we're in a static environment (like GitHub Pages)
+  // Helper to check if we're in a static environment (like GitHub Pages, Netlify)
   isStaticEnvironment() {
-    return typeof window !== 'undefined' && !this.isDevelopment;
+    // Check if we're in browser and either:
+    // 1. No API routes available (static hosting)
+    // 2. Production environment without server capabilities
+    if (typeof window === 'undefined') return false;
+    
+    // Try to detect static hosting by checking if API routes work
+    // In static environments, API routes won't be available
+    return process.env.NODE_ENV === 'production' || 
+           window.location.hostname.includes('netlify') ||
+           window.location.hostname.includes('github.io') ||
+           window.location.hostname.includes('vercel.app');
   }
 
   // Get today's practice time
@@ -341,9 +351,19 @@ class DailyPracticeManagerClass {
     this.isDevelopment = process.env.NODE_ENV === 'development';
   }
 
-  // Helper to check if we're in a static environment (like GitHub Pages)
+  // Helper to check if we're in a static environment (like GitHub Pages, Netlify)
   isStaticEnvironment() {
-    return typeof window !== 'undefined' && !this.isDevelopment;
+    // Check if we're in browser and either:
+    // 1. No API routes available (static hosting)
+    // 2. Production environment without server capabilities
+    if (typeof window === 'undefined') return false;
+    
+    // Try to detect static hosting by checking if API routes work
+    // In static environments, API routes won't be available
+    return process.env.NODE_ENV === 'production' || 
+           window.location.hostname.includes('netlify') ||
+           window.location.hostname.includes('github.io') ||
+           window.location.hostname.includes('vercel.app');
   }
 
   // Get daily practice data

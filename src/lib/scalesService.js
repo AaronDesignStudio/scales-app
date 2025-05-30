@@ -8,20 +8,37 @@ class ScalesManagerClass {
     this.isDevelopment = process.env.NODE_ENV === 'development';
   }
 
-  // Helper to check if we're in a static environment (like GitHub Pages)
+  // Helper to check if we're in a static environment (like GitHub Pages, Netlify)
   isStaticEnvironment() {
-    return typeof window !== 'undefined' && !this.isDevelopment;
+    // Check if we're in browser and either:
+    // 1. No API routes available (static hosting)
+    // 2. Production environment without server capabilities
+    if (typeof window === 'undefined') return false;
+    
+    // Try to detect static hosting by checking if API routes work
+    // In static environments, API routes won't be available
+    return process.env.NODE_ENV === 'production' || 
+           window.location.hostname.includes('netlify') ||
+           window.location.hostname.includes('github.io') ||
+           window.location.hostname.includes('vercel.app');
   }
 
   // Get user scales with localStorage fallback
   async getUserScales() {
     try {
+      console.log('ScalesManager.getUserScales called');
+      console.log('Environment check - isStaticEnvironment():', this.isStaticEnvironment());
+      
       // In static environments, use localStorage only
       if (this.isStaticEnvironment()) {
+        console.log('Getting scales from localStorage in static environment');
         const saved = localStorage.getItem(this.storageKey);
-        return saved ? JSON.parse(saved) : [];
+        const scales = saved ? JSON.parse(saved) : [];
+        console.log('Scales from localStorage:', scales);
+        return scales;
       }
 
+      console.log('Trying API first in development environment');
       // Try API first in development
       const response = await fetch('/api/scales', {
         method: 'POST',
@@ -31,18 +48,23 @@ class ScalesManagerClass {
 
       if (response.ok) {
         const scales = await response.json();
+        console.log('Scales from API:', scales);
         return scales;
       }
       
       // Fallback to localStorage if API fails
       console.warn('API failed, falling back to localStorage');
       const saved = localStorage.getItem(this.storageKey);
-      return saved ? JSON.parse(saved) : [];
+      const scales = saved ? JSON.parse(saved) : [];
+      console.log('Fallback scales from localStorage:', scales);
+      return scales;
       
     } catch (error) {
       console.warn('Error fetching user scales, using localStorage:', error);
       const saved = localStorage.getItem(this.storageKey);
-      return saved ? JSON.parse(saved) : [];
+      const scales = saved ? JSON.parse(saved) : [];
+      console.log('Error fallback scales from localStorage:', scales);
+      return scales;
     }
   }
 
@@ -50,10 +72,15 @@ class ScalesManagerClass {
   async addScale(scale) {
     try {
       console.log('ScalesManager.addScale called with:', scale);
+      console.log('Environment check - isStaticEnvironment():', this.isStaticEnvironment());
+      console.log('NODE_ENV:', process.env.NODE_ENV);
+      console.log('hostname:', typeof window !== 'undefined' ? window.location.hostname : 'server');
       
       // In static environments, use localStorage only
       if (this.isStaticEnvironment()) {
+        console.log('Using localStorage in static environment');
         const currentScales = await this.getUserScales();
+        console.log('Current scales from localStorage:', currentScales);
         const exists = currentScales.some(s => s.name === scale.name);
         
         if (!exists) {
@@ -68,11 +95,15 @@ class ScalesManagerClass {
           
           const updatedScales = [...currentScales, newScale];
           localStorage.setItem(this.storageKey, JSON.stringify(updatedScales));
+          console.log('Scale added to localStorage:', newScale);
+          console.log('Updated scales array:', updatedScales);
           return newScale;
         }
+        console.log('Scale already exists, not adding');
         return null; // Scale already exists
       }
       
+      console.log('Using API in development environment');
       // Try API first in development
       const response = await fetch('/api/scales', {
         method: 'POST',
