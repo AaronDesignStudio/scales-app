@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import ScaleCard from "@/components/scales/ScaleCard";
 import SessionCard from "@/components/scales/SessionCard";
 import ScalePracticeModal from "@/components/scales/ScalePracticeModal";
@@ -41,6 +41,12 @@ export default function Home() {
 
   // State for Add Scale Modal
   const [showAddScaleModal, setShowAddScaleModal] = useState(false);
+
+  // Hidden button state
+  const [tapCount, setTapCount] = useState(0);
+  const [showHiddenButton, setShowHiddenButton] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const tapTimeoutRef = useRef(null);
 
   // Add refs to track component state
   const fetchingRef = useRef(false);
@@ -162,6 +168,12 @@ export default function Home() {
       if (refreshIntervalRef.current) {
         clearInterval(refreshIntervalRef.current);
         refreshIntervalRef.current = null;
+      }
+      
+      // Clear tap timeout
+      if (tapTimeoutRef.current) {
+        clearTimeout(tapTimeoutRef.current);
+        tapTimeoutRef.current = null;
       }
     };
   }, []);
@@ -305,11 +317,98 @@ export default function Home() {
     }
   };
 
+  // Hidden button functionality
+  const handleTitleTap = () => {
+    setTapCount(prev => {
+      const newCount = prev + 1;
+      console.log(`Tap ${newCount}/5 detected`);
+      
+      // Clear timeout if it exists
+      if (tapTimeoutRef.current) {
+        clearTimeout(tapTimeoutRef.current);
+      }
+      
+      // Reset tap count after 3 seconds of no taps
+      tapTimeoutRef.current = setTimeout(() => {
+        console.log('Tap timeout - resetting count');
+        setTapCount(0);
+        setShowHiddenButton(false);
+      }, 3000);
+      
+      // Show hidden button after 5 taps
+      if (newCount >= 5) {
+        console.log('5 taps reached - showing hidden button');
+        setShowHiddenButton(true);
+      }
+      
+      return newCount;
+    });
+  };
+
+  const handleClearDatabase = async () => {
+    const confirmed = window.confirm(
+      'Are you sure you want to delete ALL local database data?\n\n' +
+      'This will permanently remove:\n' +
+      '• All practice sessions\n' +
+      '• Daily practice time\n' +
+      '• Your scale collection\n\n' +
+      'This action cannot be undone!'
+    );
+    
+    if (!confirmed) return;
+    
+    setIsClearing(true);
+    try {
+      const response = await fetch('/api/database', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'clearAll' }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to clear database');
+      }
+      
+      const result = await response.json();
+      
+      // Reset local state
+      setRecentSessions([]);
+      setAllSessions([]);
+      setUserScales(result.defaultScales || []);
+      
+      // Hide the button and reset tap count
+      setShowHiddenButton(false);
+      setTapCount(0);
+      
+      alert('Database cleared successfully! Default scales have been restored.');
+    } catch (error) {
+      console.error('Error clearing database:', error);
+      alert('Failed to clear database. Please try again.');
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   return (
     <div className="h-screen bg-background p-4 max-w-md mx-auto flex flex-col">
       {/* Header - Fixed */}
       <div className="flex items-center justify-between mb-6 pt-4 flex-shrink-0">
-        <h1 className="text-2xl font-bold text-foreground">My Scales</h1>
+        <div className="flex flex-col">
+          <h1 
+            className="text-2xl font-bold text-foreground cursor-pointer select-none"
+            onClick={handleTitleTap}
+          >
+            My Scales
+          </h1>
+          {/* Debug tap counter - remove in production */}
+          {tapCount > 0 && (
+            <span className="text-xs text-gray-500 mt-1">
+              Taps: {tapCount}/5
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           <ThemeToggle size="sm" />
           <Button 
@@ -321,6 +420,34 @@ export default function Home() {
           </Button>
         </div>
       </div>
+
+      {/* Hidden Clear Database Button */}
+      {showHiddenButton && (
+        <div className="mb-4 flex-shrink-0">
+          <Card className="bg-red-50 border-red-200 p-4">
+            <div className="text-center">
+              <h3 className="text-lg font-semibold text-red-800 mb-2">Developer Mode</h3>
+              <p className="text-red-600 text-sm mb-4">
+                This will permanently delete all local database data
+              </p>
+              <Button
+                onClick={handleClearDatabase}
+                disabled={isClearing}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                {isClearing ? (
+                  <InlineLoading message="Clearing..." />
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Clear All Database Data
+                  </>
+                )}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Scales List - Scrollable */}
       <div className="flex-1 min-h-0 mb-6">
